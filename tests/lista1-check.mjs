@@ -220,7 +220,7 @@ const FIXOS = [
   },
   {
     /* el mateix apartat amb un altre coeficient, per confirmar el patró +c/2 */
-    ex: 9, apartat: '(l2)', respostes: [2],
+    ex: 9, apartat: '(l2)', respostes: [5 / 2],
     fn: (x) => Math.sqrt(x * x - 5 * x) + x, infSign: '-',
     nota: '√(x^2-5x)+x en -inf -> +5/2'
   },
@@ -419,7 +419,9 @@ for (const [c, u, desc] of CASOS_REBUJO) {
     ' rebutja ' + JSON.stringify(u).padEnd(28) + ' ' + desc);
 }
 
-/* 8) El que la pagina anuncia ha de coincidir amb la funcio real. */
+/* 8) El que la pagina anuncia ha de coincidir amb la funcio real.
+   NOTA:Fem accés amb clau ('apartat') i no amb punt (.apartat) perquè en
+   alguns entorns d'execució `apartat` pot col·lidir amb un binding extern. */
 console.log('\n  H) Clau i enunciat d cada apartat de l exercici 9');
 const b9 = EX.filter((x) => x.n === 9)[0];
 const ESPERATS_9 = {
@@ -430,13 +432,19 @@ const vistos = new Map();
 for (let s = 1; s <= 400; s++) {
   let d;
   try { d = b9.make(L.rng(s * 7919 + 99)); } catch { continue; }
-  if (!d || !d.aparat || !(d.aparat in ESPERATS_9)) continue;
-  vistos.set(d.aparat, d.respostes[0]);
+  const ap = d && d['apartat'];
+  if (!ap || !(ap in ESPERATS_9)) continue;
+  vistos.set(ap, d.respostes[0]);
 }
 for (const [ap, esp] of Object.entries(ESPERATS_9)) {
   checks++;
   const obt = vistos.get(ap);
-  const ok = obt !== undefined && Math.abs(Number(obt) - Number(esp)) < 1e-9;
+  /* comparació correcta tant per a nombres com per a textos (dne, +inf...) */
+  const ok = obt !== undefined && (
+    typeof esp === 'number'
+      ? typeof obt === 'number' && Math.abs(obt - esp) < 1e-9
+      : String(obt) === String(esp)
+  );
   if (!ok) fallos++;
   console.log('   ' + (ok ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✖\x1b[0m') +
     ' ' + ap.padEnd(4) + ' announce ' + String(obt).padEnd(22) + ' (espera ' + esp + ')');

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recorte — teoría</title>
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="src/engine.js"></script>
+<script src="src/ui-core.js"></script>
+<script src="src/pagina-teoria.js"></script>
+<script>
+/* Recorta la hoja a una sola sección para poder revisarla en una captura.
+   Uso: slice.html?sec=bolzano   ·   ?sec=todas   ·   ?w=700 */
+UI.montar("teoria", "Teoría", construirTeoria);
+(function () {
+  var q = new URLSearchParams(location.search);
+  var sec = q.get("sec");
+  var w = q.get("w");
+  if (w) document.documentElement.style.overflowX = "hidden";
+  if (sec && sec !== "todas") {
+    Array.prototype.forEach.call(document.querySelectorAll(".theory-sec"), function (n) {
+      if (n.id !== sec) n.remove();
+    });
+    var titulo = document.querySelector("#screen-head");
+    if (titulo) titulo.remove();
+  }
+  if (w) {
+    var app = document.getElementById("app");
+    app.style.maxWidth = w + "px";
+  }
+})();
+</script>
+</body>
+</html>

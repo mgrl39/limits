@@ -142,7 +142,16 @@ a { color: var(--accent); }
   width: 100%;
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 0 var(--pad) calc(40px + env(safe-area-inset-bottom, 0px));
+  /* Longhands a propósito: mezclar `var()` y `env()` en un único
+     `padding` shorthand hacía que el navegador descartara el margen
+     lateral y el contenido se pegara al borde de la ventana. */
+  padding-left: var(--pad);
+  padding-right: var(--pad);
+  padding-bottom: 40px;
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .app { padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
 }
 
 .row {
@@ -1028,7 +1037,11 @@ math {
 }
 *::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
 
-math mrow { display: inline-block; }
+/* `display: inline-block` en mrow rompía la composición interna de MathML:
+   los subíndices y superíndices (f′(a), lim, msubsup) salían en la línea
+   base en vez de alineados. La regla ya no hace falta: quien debe
+   desplazarse es .formula, que tiene su propio overflow. */
+math mrow { min-width: 0; }
 
 math mfrac {
   display: inline-block;

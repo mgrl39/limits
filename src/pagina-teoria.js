@@ -66,7 +66,9 @@
   function N(v) { return M("mn", v); }           // número
   function I(v) { return M("mi", v); }           // identificador
   function O(v) { return M("mo", v); }           // operador
-  function Tx(v) { return M("mtext", v); }       // texto dentro de la fórmula
+  /* `xml:space="preserve"` es imprescindible: sin él el navegador recorta
+     los espacios de los extremos del texto y " con " sale pegado ("ccon"). */
+  function Tx(v) { return MA("mtext", { "xml:space": "preserve" }, v); }
   /* Alias en mayúsculas, para que las fórmulas largas se lean de un vistazo:
      TX = texto, LT = menor que. */
   function TX(v) { return Tx(v); }
@@ -128,6 +130,8 @@
 
   function Fn(a) { return A(I("f"), Par(a)); }
   function Gn(a) { return A(I("g"), Par(a)); }
+  /** f′(a). El primo va pegado a la f, con el argumento debajo. */
+  function Fp(a) { return B(A(I("f"), O("′")), a); }
   function sen(a) { return A(I("sen"), Par(a)); }
   function cos(a) { return A(I("cos"), Par(a)); }
   function tg(a) { return A(I("tg"), Par(a)); }
@@ -416,10 +420,30 @@
       titulo: "Chuleta rápida",
       build: function () {
         return [
-          P("Ésta es la tabla que conviene mirar antes de un test. Una ",
+          LEAD("Ésta es la tabla que conviene mirar antes de un test. Una ",
             { b: "indeterminación no es un resultado" },
             ": es una señal de que sustituir directamente no vale y hay que transformar. La última columna dice si puedes responder ya o si toca trabajar."),
 
+          H3("Las cinco preguntas, siempre en este orden"),
+          P("Antes de calcular nada, hazte estas cinco preguntas en la cabeza. Si contestas bien a la tercera, ya sabes qué técnica va a hacer falta y no vas a perder tiempo."),
+
+          OL(
+            [{ b: "¿Es un límite en un punto o en el infinito? " },
+             "En un punto se sustituye y se calculan los laterales.  En el infinito casi nunca se sustituye: manda el término de mayor grado."],
+            [{ b: "¿Sustituyendo sale un número? " },
+             "Si sale un número, ese es el límite y se acabó. No hay nada que investigar."],
+            [{ b: "¿Sale una operación imposible? " },
+             "División por cero, raíz de un negativo o logaritmo de un no positivo: aquí el límite es infinito o no existe, y hay que mirar los dos lados por separado."],
+            [{ b: "Si no sale imposible, ¿qué indeterminación es? " },
+             "0/0 se factoriza. ∞/∞ se comparan grados. ∞−∞ se pone a común denominador o se racionaliza. 0·∞ se pasa a cociente. 1^∞ se aplica la fórmula del número e."],
+            [{ b: "¿Hay un 1/x en un exponente? " },
+             "Entonces el límite se resuelve por lados y casi nunca existe. Es el único caso en el que está prohibido escribir ±∞."]
+          ),
+
+          CALLOUT({ b: "La pregunta 1 es la que más se salta. " },
+            "Un límite en +∞ no se resuelve sustituyendo x = ∞, porque ∞ no es un número. Cambia por completo la técnica.", "warn"),
+
+          H3("El catálogo de formas"),
           TABLA(["Caso", "Lo que obtienes", "Señal"], [
 
             [F(lim(XA, Fn(A(I("a"))))), "f(a), si f es continua en a", OK()],
@@ -567,9 +591,9 @@
 
           F(lim(XA, Fn(I("x")), EQ, I("L")), O("⟺"),
             sp("0.4em"),
-            I("∀"), I("ε"), O(">"), n0, sp("0.3em"),
-            I("∃"), I("δ"), O(">"), n0, sp("0.3em"),
-            I("∀"), I("x"), O("∈"), Ea2, sp("0.3em"),
+            O("∀"), I("ε"), O(">"), n0, sp("0.3em"),
+            O("∃"), I("δ"), O(">"), n0, sp("0.3em"),
+            O("∀"), I("x"), O("∈"), Ea2, sp("0.3em"),
             O(":"), Abs(A(Fn(I("x")), O("−"), I("L"))), O("<"), I("ε")),
 
           P("En palabras: ", { b: "para cualquier margen de error ε" },
@@ -598,7 +622,7 @@
       build: function () {
         var unoSobreXm2 = Q(n1, A(I("x"), O("−"), n2));
         return [
-          P("Aproximarse a a puede hacerse por dos caminos. El límite por la izquierda se anota con el signo menos sobre a; el de la derecha, con el signo más."),
+          LEAD("Aproximarse a a puede hacerse por dos caminos. El límite por la izquierda se anota con el signo menos sobre a; el de la derecha, con el signo más."),
 
           F(lim(XAM, Fn(I("x"))), EQ, I("L"), sp("2em"),
             lim(XAP, Fn(I("x"))), EQ, I("L")),
@@ -659,7 +683,7 @@
                    lim(XA, Fn(I("x"))), sym, lim(XA, Gn(I("x"))));
         }
         return [
-          P("Si los límites de las funciones que intervienen existen y son finitos, se pueden operar como si fueran números. Eso es lo que permite calcular la mayoría de los límites sin usar ninguna técnica especial."),
+          LEAD("Si los límites de las funciones que intervienen existen y son finitos, se pueden operar como si fueran números. Eso es lo que permite calcular la mayoría de los límites sin usar ninguna técnica especial."),
 
           TABLA(["Operación", "Regla"], [
             [F(op(MAS)), "Suma y resta: se operan los límites"],
@@ -675,6 +699,7 @@
             { b: "determinados" }, " y otros que son ", { b: "indeterminados" },
             ". Indeterminado no significa que no se pueda: significa que hay que mirar el caso concreto."),
 
+          COLS(
           TABLA(["Expresión", "Resultado", "Señal"], [
             [F(A(INFP, MAS, I("k"))), "+∞", OK()],
             [F(A(INFP, MENOS, I("k"))), "+∞", OK()],
@@ -692,7 +717,9 @@
             [F(A(Q(INFP, INFP))), PREG(), AVISO()],
             [F(A(Q(INFP, INFN))), PREG(), AVISO()],
             [F(A(Q(INFN, INFN))), PREG(), AVISO()],
-            [F(A(Q(I("n"), INFP))), "0", OK()],
+            [F(A(Q(I("n"), INFP))), "0", OK()]
+          ]),
+          TABLA(["Expresión", "Resultado", "Señal"], [
             [F(A(Q(I("n"), INFN))), "0", OK()],
             [F(Q(n0, INFP)), "0", OK()],
             [F(Q(n0, INFN)), "0", OK()],
@@ -708,7 +735,7 @@
             [F(A(INFP, S(I("k"), n1), Tx(",  k < 0"))), "0", OK()],
             [F(A(INFP, S(n0, Tx("+∞")))), PREG(), AVISO("∞⁰")],
             [F(A(S(n0, Tx("+∞")))), PREG(), AVISO("0⁰")]
-          ]),
+          ])),
 
           CALLOUT({ b: "El álgebra del infinito no es la de los números reales. " },
             "+∞ no es un número: no se puede escribir (+∞) − (+∞) = 0, porque antes habría que restar dos infinitos, y eso no está definido. Las filas de la tabla sólo dicen hacia dónde se va; cuando el resultado es indeterminado, el límite depende de cómo compiten los términos.", "warn"),
@@ -731,7 +758,7 @@
       titulo: "Jerarquía de crecimiento",
       build: function () {
         return [
-          P("En el infinito hay una pregunta previa a cualquier cálculo: ", { b: "¿qué crece más rápido?" },
+          LEAD("En el infinito hay una pregunta previa a cualquier cálculo: ", { b: "¿qué crece más rápido?" },
             " La jerarquía es esta y se cumple siempre, sin importar los coeficientes:"),
 
           jerarquia(),
@@ -854,7 +881,7 @@
                          A(n2, O("−"), Q(n1, S(I("x"), n2)), MAS, Q(n1, S(I("x"), n3))));
 
         return [
-          P("Éste es el método que se aplica siempre, en orden, antes de pensar en indeterminaciones:"),
+          LEAD("Éste es el método que se aplica siempre, en orden, antes de pensar en indeterminaciones:"),
 
           OL(
             [{ b: "Sustituye directamente. " },
@@ -932,7 +959,7 @@
         var xtg2 = Q(cos(I("x")), Q(sen(I("x")), I("x")));
 
         return [
-          P("Una indeterminación es un símbolo que no significa nada por sí mismo. No son resultados: son avisos de que hace falta una transformación antes de poder calcular el límite."),
+          LEAD("Una indeterminación es un símbolo que no significa nada por sí mismo. No son resultados: son avisos de que hace falta una transformación antes de poder calcular el límite."),
 
           TABLA(["Forma", "Qué es", "Qué técnica se usa"], [
             [F(Q(INFP, INFP)), AVISO("∞/∞"),
@@ -1095,6 +1122,8 @@
       titulo: "Límites notables",
       build: function () {
         return [
+          LEAD("Tres límites que se preguntan una y otra vez y que siempre valen lo mismo. Merece la pena aprendérselos de memoria: son cocientes 0/0 cuyo resultado se traduce directamente a 1."),
+
           H3("El más importante: el límite del seno"),
           F(lim(X0, Q(sen(I("x")), I("x"))), EQ, n1),
 
@@ -1310,12 +1339,15 @@
             el("div", null, [
               H3("Truco: |x − a| se abre en dos trozos"),
               P("Siempre que aparezca un valor absoluto, se sustituye por dos trozos y el problema se convierte en una función a trozos normal:"),
-              F(absx(), EQ, A(I("x"), Tx(",  si x ≥ 0"), MAS, A(MENOS, I("x"), Tx(",  si x < 0")))),
-              P("Con eso, en el ejercicio 5(c), f(x) = (x + |x − 2|)/x se convierte en:"),
-              F(A(Q(A(I("x"), O("+"), A(n2, O("−"), I("x")))), I("x")), Tx(",  si x ≤ 2"), sp("0.8em"),
-                 O("∪"), sp("0.8em"),
-                 Q(A(A(n2, I("x"), O("−"), n2)), I("x")), Tx(",  si x > 2")),
-              P("Y de ahí sale todo lo que hace falta.")
+              F(TROZOS("|x − a|", [
+                [A(I("x"), O("−"), I("a")), "si x ≥ a"],
+                [A(n1, O("−"), A(I("x"), O("−"), I("a"))), "si x < a"]
+              ])),
+              P("Con eso, en el ejercicio 5(c), f(x) = (x + |x − 2|)/x se convierte en una función a trozos corriente, y de ahí sale todo lo que hace falta:"),
+              F(TROZOS("f", [
+                [Q(A(I("x"), O("+"), A(n2, O("−"), I("x"))), I("x")), "si x ≤ 2"],
+                [Q(A(A(n2, I("x"), O("−"), n2)), I("x")), "si x > 2"]
+              ]))
             ])
           ),
 
@@ -1462,7 +1494,7 @@
       titulo: "Continuidad",
       build: function () {
         return [
-          P("Una función es ", { b: "continua" },
+          LEAD("Una función es ", { b: "continua" },
             " en un punto si no da ningún salto, ni sube de golpe de un valor a otro, ni se le va por infinito al llegar. Formalmente son ",
             { b: "tres condiciones" }, " que tienen que cumplirse a la vez."),
 
@@ -1600,11 +1632,12 @@
           P("Imagina que la función f está siempre entre dos curvas, la de abajo y la de arriba. Si las dos curvas se juntan en un mismo punto, f tiene que acabar ahí también: está ", { b: "atrapada" }, ". Por eso el único límite notable que hay que saber de memoria no es el del seno, sino la desigualdad que lo demuestra."),
 
           H3("El enunciado"),
-          P("Si para el x que se está estudiar se cumple que g(x) ≤ f(x) ≤ h(x), y además los límites de g y de h en ese punto son los dos iguales a L, entonces el límite de f es L."),
-          F(A(lim(XA, Gn(I("x"))), O("≤"), lim(XA, Fn(I("x"))), O("≤"), lim(XA, A(I("h"), Par(I("x")))), O("="), I("L")),
-            sp("0.3em"),
-            A(lim(XA, Gn(I("x"))), O("="), lim(XA, A(I("h"), Par(I("x")))), O("="), I("L"))),
-          F(A(Gn(I("x")), O("≤"), Fn(I("x")), O("≤"), A(I("h"), Par(I("x")))), sp("1.2em"), EQ, I("L")),
+          P("Si, en un entorno del punto que se estudia, la función f está encerrada entre otras dos, g por debajo y h por encima…"),
+          F(A(Gn(I("x")), O("≤"), Fn(I("x")), O("≤"), A(I("h"), Par(I("x"))), Tx("   cerca de  "), I("a"))),
+          P("…y los límites de esas dos funciones en ese punto son los dos iguales a L, entonces el límite de f también lo es:"),
+          F(A(A(lim(XA, Gn(I("x"))), O("="), A(lim(XA, A(I("h"), Par(I("x")))), O("="), I("L"))),
+            sp("0.6em"), O("⟹"), sp("0.6em"),
+            A(lim(XA, Fn(I("x"))), O("="), I("L")))),
 
           CALLOUT("El nombre también aparece como ", { b: "teorema del sandwich" }, ", ", { b: "teorema del aro" },
             " o ", { b: "teorema de las tijeras" }, ". Todos son el mismo teorema.", "ok"),
@@ -1614,22 +1647,23 @@
           TABLA(["Desigualdad", "Sale de", "Para qué sirve"], [
             [F(A(MENOS, n1), O("≤"), sen(I("x")), O("≤"), n1), "el seno oscila entre −1 y 1",
              "acotar cualquier cosa con seno dentro"],
-            [F(A(MENOS, absx(), Tx(",   y con x > 0")), O("≤"), xSen1x, O("≤"), n1), "sen x < x < tg x",
-             "la demostración del límite notable del seno"],
-            [F(A(n0, O("≤"), A(n1, O("−"), cos(I("x"))), O("≤"), Q(S(I("x"), n2), n2))), "1 − cos x = 2·sen²(x/2)",
-             "salto infinito en 1/x, y el límite notable de (1 − cos x)/x²"],
-            [F(A(MENOS, Abs(I("g"), Par(I("x"))), O("≤"), Gn(I("x")), O("≤"), Abs(I("g")), Par(I("x")))),
-             "cualquier cosa acotada", "atrapar productos del tipo x·tg(1/x)"]
+            [F(A(cos(I("x")), O("≤"), Q(sen(I("x")), I("x")), O("≤"), n1, Tx("     si 0 < x < π/2"))),
+             "sen x < x < tg x", "la demostración del límite notable del seno"],
+            [F(A(n0, O("≤"), A(n1, O("−"), cos(I("x"))), O("≤"), Q(S(I("x"), n2), n2))),
+             F(A(A(n1, O("−"), cos(I("x"))), EQ, A(n2, O("·"), S(sen(Q(n1, I("x"))), n2)))),
+             "salto infinito en 1/x, y el notable de (1 − cos x)/x²"],
+            [F(A(MENOS, Abs(I("g"), Par(I("x"))), O("≤"), Gn(I("x")), O("≤"), Abs(I("g"), Par(I("x"))))),
+             "de |g(x)| ≤ 1", "atrapar productos del tipo x · sen(1/x)"]
           ]),
 
           H3("Ejercicio 5(d): f(x) = x·sen(1/x) para x ≠ 0, y f(0) = 0"),
-          P("Es el ejemplo canónico. Por una parte no se puede sustituir (da 0·tg(1/0), que no existe) ni factorizar. Lacompression viene del valor absoluto del seno:"),
+          P("Es el ejemplo canónico. Por una parte no se puede sustituir (da 0·tg(1/0), que no existe) ni factorizar. La compresión viene del valor absoluto del seno:"),
           F(A(MENOS, Abs(xSenM1x), O("≤"), absx(), O("="), n1,
             sp("0.3em"), Tx(",  y  "),
             Abs(xSenM1x), O("≤"), absx(), O("→"), n0)),
           P("La función está encerrada entre −|x| y |x|, y los dos lados van a 0. Luego el límite es 0, que coincide con f(0), y la función ", { b: "es continua en 0" }, ". En cualquier otro punto es producto de continuas, así que también es continua."),
 
-          CALLOUT("Ésta es la respuesta corta al 5(d), y con ella seUnderstands cualquier ejercicio del estilo «demuestra que f es continua en x = 0» con seno o coseno dentro. La receta es siempre la misma: acotar, escribir la cadena de desigualdades y dejar que los dos extremos tiendan a 0."),
+          CALLOUT("Ésta es la respuesta corta al 5(d), y con ella se resuelve cualquier ejercicio del estilo «demuestra que f es continua en x = 0» con seno o coseno dentro. La receta es siempre la misma: acotar, escribir la cadena de desigualdades y dejar que los dos extremos tiendan a 0."),
 
           H3("El mismo teorema demuestra el límite notable del seno"),
           P("De cos x ≤ sen x / x ≤ 1, tomando límites y usando que cos x → 1, se deduce que sen x / x → 1. Es la razón por la que el límite notable se puede demostrar sin saber nada más: el seno queda atrapado entre dos funciones que ya conocemos."),
@@ -1671,15 +1705,15 @@
         e1.appendChild(P({ b: "Paso 1. " }, "Se define la función auxiliar g(x) = f(x) + 1, de modo que g(c) = 0 y f(c) = −1 es lo mismo. Entonces g(x) = x³ − x² + x + 1."));
         e1.appendChild(F(g1));
         e1.appendChild(P({ b: "Paso 2. " }, "Se busca un intervalo cerrado donde g cambie de signo. El 0 y el −1 salen enseguida, porque los polinomios se evaluan sin operaciones difíciles:"));
-        e1.appendChild(TABLA(["x", "g(x)", "Signo"], [
+        e1.appendChild(TABLA(["x", "valor de la función", "signo"], [
           [F(N("-1")), F(N("-2")), el("b", { text: "negativo" })],
           [F(n0), F(n1), el("b", { text: "positivo" })]
         ]));
         e1.appendChild(P({ b: "Paso 3. " }, "g es un polinomio, luego es continua en todo ℝ, y en particular en [−1, 0]. Además g(−1)·g(0) = −2 < 0. Se cumplen las tres hipótesis."));
-        e1.appendChild(F(A(I("∃"), I("c"), TX("  ∈ (−1, 0)  con  g(c) = 0"),
-          O(" ⟺ "), I("c"), TX("  con  f(c) = −1"), sp("0.8em"),
-          O("⟹"), sp("0.5em"), I("c"), TX("  vale aproximadamente  "), N("-1.6"), Tx("…"))));
-        e1.appendChild(CALLOUT("Fíjate en la redacción: el teorema no da el valor de c, sólo que existe dentro de (−1, 0). Si el ejercicio pidiera el valor exacto, con esto no bastaría y habría que recurrir a la bisección.", "warn"));
+        e1.appendChild(F(A(O("∃"), I("c"), O("∈"), A(O("("), N("-1"), O(","), n0, O(")")),
+          sp("0.3em"), Tx("tal que  "), A(Fn(I("c")), EQ, N("-1")))));
+        e1.appendChild(P("Ese es el resultado que se entrega, y no se puede decir más: el teorema garantiza que la raíz existe dentro de (−1, 0), no dónde está. Si el ejercicio pidiera el valor aproximado, con esto no bastaría y habría que recurrir a la bisección."));
+        e1.appendChild(CALLOUT("Fíjate también en que el intervalo tenía que ser cerrado: [−1, 0]. Con (−1, 0) el teorema no dice nada, porque no hay extremos donde mirar el signo.", "warn"));
 
         /* --- Ejercicio 2: sen x + 2x − 1 = 0 en [0, π/2] --- */
         var g2 = A(sen(I("x")), MAS, n2, I("x"), O("−"), n1);
@@ -1699,7 +1733,7 @@
         e3.appendChild(F(A(S(I("x"), n3), O("="), N("3"), I("x"), MAS, n1, sp("0.6em"), EQ, sp("0.6em"),
           g3, EQ, n0, sp("0.8em"), Tx("(el cero de la izquierda es el −1 que se pasa)"))));
         e3.appendChild(P("Para garantizar tres raíces distintas hay que aplicar Bolzano tres veces, en tres intervalos separados. Se busca que los signos se alternen:"));
-        e3.appendChild(TABLA(["x", "g(x) = x³ − 3x − 1", "Signo"], [
+        e3.appendChild(TABLA(["x", "valor de la función", "signo"], [
           [F(N("-2")), F(N("-3")), el("b", { text: "negativo" })],
           [F(N("-1")), F(n1), el("b", { text: "positivo" })],
           [F(n0), F(N("-1")), el("b", { text: "negativo" })],
@@ -1711,7 +1745,7 @@
         var bisec = EJEMPLO("Extra", "Bisección: cómo se localiza la raíz cuando la piden aproximada");
         bisec.appendChild(P("Bolzano no dice dónde está la raíz, sólo que existe. Si el ejercicio pide un valor aproximado se usa la ", { b: "bisección" },
           ", que consiste en aplicar Bolzano con intervalos cada vez más pequeños."));
-        bisec.appendChild(TABLA(["Paso", "Punto medio", "Signo de g", "Intervalo nuevo"], [
+        bisec.appendChild(TABLA(["paso", "punto medio", "signo", "intervalo nuevo"], [
           [F(n1), F(N("1")), "−3", "[1, 2]"],
           [F(n2), F(N("1.5")), "−2,125", "[1.5, 2]"],
           [F(n3), F(N("1.75")), "−0,89", "[1.75, 2]"],
@@ -1733,18 +1767,19 @@
           H3("2. El enunciado, en dos versiones"),
           P({ b: "Versión con cambio de signo. " },
             "Si f es continua en el intervalo cerrado [a, b] y f(a)·f(b) < 0, entonces existe al menos un punto c del intervalo abierto (a, b) tal que f(c) = 0."),
-          F(A(lim(XA, Fn(I("x"))), O("≠"), I("L"), sp("0.3em"), Tx("(esa es otra forma de decirlo)")),
-            sp("1em"),
-            A(I("f"), TX(" continua en [a, b]"), sp("0.3em"), O("∧"), sp("0.3em"),
+          COLS(
+            F(A(I("f"), TX(" continua en [a, b]"), sp("0.3em"), O("∧"), sp("0.3em"),
               A(Fn(I("a")), O("·"), Fn(I("b")), O("<"), n0),
               sp("0.6em"), O("⟹"), sp("0.6em"),
-              I("∃"), I("c"), O("∈"), A(O("("), I("a"), O(","), I("b"), O(")"))),
-              sp("0.3em"), O(":"), sp("0.3em"), Fn(I("c")), EQ, n0),
-          P({ b: "Versión general (teorema del valor intermedio). " },
-            "Si f es continua en [a, b], para cualquier número k comprendido entre f(a) y f(b) existe un c ∈ (a, b) con f(c) = k. La versión anterior es el caso k = 0."),
-          F(A(I("k"), TX(" entre "), Fn(I("a")), TX(" y "), Fn(I("b")),
-            sp("0.6em"), O("⟹"), sp("0.6em"),
-            I("∃"), I("c"), TX(" con  "), Fn(I("c")), EQ, I("k"))),
+              O("∃"), I("c"), O("∈"), A(O("("), I("a"), O(","), I("b"), O(")")),
+              sp("0.3em"), O(":"), sp("0.3em"), Fn(I("c")), EQ, n0)),
+
+            el("div", null, [
+              P({ b: "La misma idea, escrita al revés: " },
+                "si el límite en a existe y es un número L, entonces hay algún punto de la gráfica, distinto del propio a, que vale exactamente L. El límite es el punto al que la función se acerca sin llegar a tocarlo."),
+              P("Las dos formas dicen lo mismo. En un examen da igual cuál se escriba, pero hay que dejar constancia de las ", { b: "tres hipótesis" }, ".")
+            ])
+          ),
 
           /* --- 3. Las hipótesis --- */
           H3("3. Las tres hipótesis, una a una"),
@@ -1906,11 +1941,10 @@
 
           H3("La derivada ES un límite"),
           P("La derivada de f en el punto a es el límite de la recta secante cuando el segundo punto se acerca al primero:"),
-          F(A(B(I("f"), O("′")), Par(I("a")), EQ,
-            lim(A(I("h"), TO, n0), Q(A(Fn(A(I("a"), MAS, I("h"))), O("−"), Fn(I("a"))), I("h"))),
-            sp("0.8em"), Tx("o, equivalentemente"), sp("0.8em"),
-            lim(A(I("x"), TO, I("a")), Q(A(Fn(I("x")), O("−"), Fn(I("a"))), A(I("x"), O("−"), I("a")))))),
-          P("Es decir: la derivada es un límite Notable de tipo 0/0, que se resuelve cancelando el factor h — o el factor x − a — como en cualquier otro. Todo el tema que hay en esta hoja es el toolkit que hace falta para derivar."),
+          F(A(Fp(I("a")), EQ, lim(A(I("h"), TO, n0), Q(A(Fn(A(I("a"), MAS, I("h"))), O("−"), Fn(I("a"))), I("h"))))),
+          P("Y la misma cosa escribiendo el segundo punto como x en vez de como h:"),
+          F(A(Fp(I("a")), EQ, lim(A(I("x"), TO, I("a")), Q(A(Fn(I("x")), O("−"), Fn(I("a"))), A(I("x"), O("−"), I("a")))))),
+          P("Es decir: la derivada es un límite notable de tipo 0/0, que se resuelve cancelando el factor h — o el factor x − a — como en cualquier otro. Todo el tema que hay en esta hoja es el toolkit que hace falta para derivar."),
 
           H3("La tabla de derivadas que se usa en 2º de Bachillerato"),
           COLS(
@@ -1927,8 +1961,10 @@
               [F(sen(I("x"))), F(cos(I("x")))],
               [F(cos(I("x"))), F(A(MENOS, sen(I("x"))))],
               [F(tg(I("x"))), F(Q(n2, S(A(n1, MAS, S(tg(I("x")), n2)))))],
-              [F(absx()), [F(A(MENOS, n1, Tx(", si x < 0"))), F(n1, Tx("  ·  ")), F(A(n1, Tx(", si x ≥ 0")))]],
-              [F(S(I("x"), I("n"))), "—"],
+              [F(absx()), TROZOS(null, [
+                [A(MENOS, n1), "si x < 0"],
+                [n1, "si x ≥ 0"]
+              ])],
               [F(A(I("f"), O("+"), I("g"))), F(A(I("f"), O("′"), O("+"), I("g"), O("′")))],
               [F(A(I("f"), O("·"), I("g"))), F(A(I("f"), O("′"), I("g"), O("+"), I("f"), I("g"), O("′")))]
             ])

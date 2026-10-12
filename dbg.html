@@ -1,6 +1,7 @@
 <!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <link rel="stylesheet" href="src/styles.css"></head><body>
 <div id="app"></div>
+<div id="ctrl" class="app">ctrl</div>
 <script src="src/engine.js"></script>
 <script src="src/ui-core.js"></script>
 <script src="src/pagina-teoria.js"></script>
@@ -21,6 +22,14 @@ UI.montar("teoria","Teoría", construirTeoria);
     "innerWidth="+window.innerWidth,
     "padLeft="+cs.paddingLeft, "padTop="+cs.paddingTop,
     "rule="+Array.prototype.map.call(document.styleSheets[0].cssRules,function(r){return r.selectorText}).filter(Boolean).join(" ~ ").slice(0,400),
+    "padVar="+getComputedStyle(app).getPropertyValue("--pad")+" | root:"+getComputedStyle(document.documentElement).getPropertyValue("--pad"),
+    "supportsPadVar="+CSS.supports("padding","0px var(--pad) 40px"),
+    "supportsEnvShorthand="+CSS.supports("padding","0px var(--pad) calc(40px + env(safe-area-inset-bottom, 0px))"),
+    "CTRL padding="+getComputedStyle(document.getElementById("ctrl")).padding,
+    "ctrlRectX="+document.getElementById("ctrl").getBoundingClientRect().x,
+    "appRectX="+app.getBoundingClientRect().x+" appW="+app.getBoundingClientRect().width,
+    "appStyleAttr="+(app.getAttribute("style")||"(none)")+" appInlinePad="+app.style.padding,
+    "matches="+(function(){var out=[];var rules=document.styleSheets[0].cssRules;for(var i=0;i<rules.length;i++){var r=rules[i];if(!r.selectorText)continue;try{if(app.matches(r.selectorText))out.push(r.selectorText+" {"+r.style.cssText.slice(0,90)+"}");}catch(e){}}return out.join("\n");})(),
     "appRules="+(Array.prototype.filter.call(document.styleSheets[0].cssRules,function(r){return r.selectorText&&r.selectorText.indexOf(".app")>=0}).map(function(r){return r.selectorText+" {"+r.style.cssText+"}"}).join(" || "))];
   document.title=out.join(" | ");
   var p=document.createElement("pre");p.style.cssText="position:fixed;top:0;left:0;z-index:999;background:#000;color:#0f0;font-size:12px;padding:8px;max-width:100%";

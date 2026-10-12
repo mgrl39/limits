@@ -110,9 +110,8 @@
   /** Normalización "dura" para comparar respuestas del alumno. */
   function normDuro(s) {
     return normText(s)
-      .replace(/[.,;:()[\]{}<>·×*\/\\|=+]/g, " ")
-      .replace(/infinito/g, "inf")
-      .replace(/negativo/g, "-")
+      .replace(/[.,;:()[\]{}<>·×*\/\\|=+≠]/g, " ")
+      .replace(/\binfinito\b/g, "inf")
       .replace(/\s+/g, " ").trim();
   }
 
@@ -347,15 +346,24 @@
 
   /* --- comparación student-friendly de "sí/no" ------------------------ */
   var NUMEROS_ES = { 1: "uno", 2: "dos", 3: "tres", 4: "cuatro", 5: "cinco", 6: "seis" };
+  var FORMAS_SI = ["si", "existe", "si existe", "si hay", "si se cumple",
+    "si existe y es unico", "si unico", "unico", "si es unico", "si existe un valor",
+    "si existen 3 valores distintos", "si existen tres", "si existen 3"];
+  var FORMAS_NO = ["no", "no existe", "ninguno", "nunca", "falso", "no hay",
+    "no existe ninguno", "no se puede asegurar", "no se puede garantizar"];
   function esSi(s) {
-    return s === "si" || s === "si existe" || s === "existe" || s === "si existe" || s === "sizesde" ||
-      s === "si hay" || s === "si" || s === "si existe y es unico" || s === "si existe exactamente uno" ||
-      s === "si unico" || s === "unico" || s === "si es unico" || s === "si existe un valor" ||
-      s.indexOf("existe") === 0 || s.indexOf("si existe") === 0;
+    return FORMAS_SI.indexOf(s) >= 0 || (s.indexOf("existe") === 0 && s.length <= 40);
   }
   function esNo(s) {
-    return s === "no" || s === "no existe" || s.indexOf("no existe") === 0 || s === "ninguno" ||
-      s === "nunca" || s === "falso" || s === "no hay" || s === "no se puede asegurar";
+    return FORMAS_NO.indexOf(s) >= 0 || (s.indexOf("no existe") === 0 && s.length <= 40);
+  }
+  /** Índice de la opción de `answer.options` que el alumno ha escrito, o −1. */
+  function opcionEscribida(ans, s) {
+    if (!ans.options || !ans.options.length) return -1;
+    for (var i = 0; i < ans.options.length; i++) {
+      if (normDuro(ans.options[i]) === s) return i;
+    }
+    return -1;
   }
 
   /**
@@ -364,6 +372,15 @@
    */
   function checkExistencia(ans, s) {
     var objetivo = ans.value;
+    /* 1) Si el alumno ha copiado una de las 4 opciones, manda la opción
+     *    (y una opción incorrecta se rechaza aunque empiece por "No existe"). */
+    var op = opcionEscribida(ans, s);
+    if (op >= 0) {
+      return op === ans.correctOption
+        ? { ok: true, norm: ans.options[op] }
+        : { ok: false, norm: ans.options[op], razon: "La opción correcta es «" + ans.options[ans.correctOption] + "». " };
+    }
+    /* 2) Si no, se admiten solo las formas cortas: "sí", "no", "único", "3". */
     if (!objetivo) {
       if (esNo(s)) return { ok: true, norm: "no existe" };
       if (esSi(s)) return { ok: false, norm: s, razon: "Sí existe: el enunciado da las condiciones para aplicar Bolzano." };
@@ -394,28 +411,37 @@
   }
 
   /* --- comparación de la respuesta "params" --------------------------- */
-  /** Trocea "a = 21/10, b = 46/5, c = 21/5" en pares {clave, valor}. */
+  /**
+   * Trocea  "a = 21/10, b = 46/5, c = 21/5"  (o "a=21/10;b=46/5;c=21/5",
+   * o "a 21/10 b 46/5 c 21/5")  en  { a:"21/10", b:"46/5", c:"21/5" }.
+   * Normaliza POR TROZO, porque `normDuro` se come las comas y el punto y
+   * coma (que son justo los separadores).
+   */
   function parseParams(s) {
     var out = {};
-    var trozos = s.split(/[,;\n]|\s+y\s+|\s+e\s+/).map(function (t) { return t.trim(); }).filter(Boolean);
+    var bruto = String(s).replace(/[−–—]/g, "-");
+    var trozos = bruto.split(/[,;\n]/).map(function (t) { return t.trim(); }).filter(Boolean);
+    /* Si no había separadores, se intenta separar por "letra + valor". */
+    if (trozos.length === 1) {
+      var m0 = bruto.match(/^\s*([a-z])\s*[:=]?\s*([-+]?[0-9./]+)/i);
+      if (m0) trozos = bruto.replace(/([a-z])\s*[:=]?\s*(?=[-+]?[0-9])/gi, "$1,").split(",");
+    }
     for (var i = 0; i < trozos.length; i++) {
-      var t = trozos[i];
-      var m = t.match(/^([a-z])\s*(?:=|:|\bvale\b|\bes\b|\bsea\b)\s*(.+)$/);
-      if (m) out[m[1]] = m[2].trim();
-      else {
-        var libre = t.match(/^([a-z])\s+(.+)$/);
-        if (libre) out[libre[1]] = libre[2].trim();
-      }
+      var t = normDuro(trozos[i]);
+      if (!t) continue;
+      var m = t.match(/^([a-z])\s*(?:=|:|\bvale\b|\bes\b|\bsea\b)?\s*(.*)$/);
+      if (m && m[2]) out[m[1]] = m[2];
     }
     return out;
   }
   function mismoValor(escrito, q) {
     var t = normDuro(escrito);
     if (!t) return false;
-    if (t === normDuro(fmtQ(q)) || t === normDuro(q.toDisplay())) return true;
+    var w = Q(q);
+    if (t === normDuro(w.toDisplay())) return true;
     var v = Number(String(escrito).replace(",", "."));
-    var w = Q(q).toNumber();
-    return isFinite(v) && isFinite(w) && Math.abs(v - w) <= 1e-9 * Math.max(1, Math.abs(w));
+    var z = w.toNumber();
+    return isFinite(v) && isFinite(z) && Math.abs(v - z) <= 1e-9 * Math.max(1, Math.abs(z));
   }
   function checkParams(ans, s) {
     var mio = parseParams(s);
@@ -427,28 +453,22 @@
       if (!mismoValor(mio[nombre], q)) fallan.push(nombre);
     }
     if (!claves.length) return null;
-    if (!faltan.length && !fallan.length) {
-      return { ok: true, norm: paramsToString(ans) };
-    }
-    var razon;
-    if (faltan.length) {
-      razon = "Falta el valor de " + faltan.join(", ") + ". ";
-    } else {
-      var detalle = fallan.map(function (n) {
+    if (!faltan.length && !fallan.length) return { ok: true, norm: paramsToString(ans) };
+    var razon = faltan.length
+      ? ("Falta el valor de " + faltan.join(", ") + ". ")
+      : ("Los valores no cuadran: " + fallan.map(function (n) {
         for (var j = 0; j < ans.values.length; j++) {
           if (ans.values[j][0] === n) return n + " = " + fmtQ(ans.values[j][1]) + " (tú has escrito " + mio[n] + ")";
         }
         return "";
-      }).join("; ");
-      razon = "Los valores no cuadran: " + detalle + ". ";
-    }
-    return { ok: false, norm: s, razon: razon + "Hay que igualar los tres empalmes." };
+      }).join("; ") + ". ");
+    return { ok: false, norm: paramsToString(ans), razon: razon + "Hay que igualar los tres empalmes." };
   }
 
   /* --- comparación de la respuesta "piecewise-by-param" ---------------- */
   var INF_TXT = {
-    "+infinito": 1, "mas infinito": 1, "mas": 1, "positivo": 1, "infinito positivo": 1, "+inf": 1, "inf": 1,
-    "-infinito": -1, "menos infinito": -1, "negativo": -1, "infinito negativo": -1, "-inf": -1
+    "infinito": 1, "+inf": 1, "inf": 1, "mas": 1, "positivo": 1, "infinito positivo": 1,
+    "-inf": -1, "menos": -1, "negativo": -1, "infinito negativo": -1
   };
   function valorCaso(v) {
     if (v.kind === "infinite") return "inf" + (v.sign > 0 ? "+" : "-");
@@ -460,39 +480,72 @@
     var t = normDuro(txt);
     if (!t) return null;
     if (t === "no existe" || t === "dne") return "dne";
+    if (/^\+?infinito$/.test(t)) return "inf+";
+    if (/^-infinito$/.test(t)) return "inf-";
     if (t in INF_TXT) return "inf" + (INF_TXT[t] > 0 ? "+" : "-");
-    if (t === "infinito") return "inf+";
-    var v = Number(t.replace(" ", ""));
-    if (isFinite(v)) return "r" + Q.fromNumber(v).toString();
+    var v = Number(t.replace(/\s+/g, ""));
+    if (isFinite(v) && /\d/.test(t)) return "r" + Q.fromNumber(v).toString();
     return null;
   }
+  /**
+   * Convierte una etiqueta `when` ("a < 1 y a ≠ 0") en una expresión regular
+   * tolerante a espacios y a "mayor que"/"menor que" no, pero estricta en el
+   * operador: así "a = 1" y "a > 1" NUNCA se confunden entre sí.
+   */
+  function labelRegex(when) {
+    var s = String(when).replace(/[−–—]/g, "-")
+      .replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/≠/g, "!=")
+      .toLowerCase().replace(/\s+(?:y|and|&)\s+/g, " & ")
+      .replace(/\s+/g, " ").trim();
+    var out = "", i = 0;
+    while (i < s.length) {
+      var c = s[i];
+      if (c === "<" || c === ">" || c === "=" || c === "!") {
+        var dos = (s[i + 1] === "=");
+        out += "\\s*" + c + (dos ? "=" : "") + "\\s*";
+        i += dos ? 2 : 1;
+        continue;
+      }
+      if (c === "&") { out += "\\s*(?:y|and|&)\\s*"; i++; continue; }
+      if (c === " ") { i++; continue; }
+      out += c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+      i++;
+    }
+    return new RegExp("^" + out + "$");
+  }
+  /** Separa un trozo written por el alumno en {etiqueta, valor}. */
+  function partirCaso(txt) {
+    var s = String(txt).replace(/[−–—]/g, "-").trim();
+    var m = s.match(/^(.+?)\s+(?:si|cuando|donde|para)\s+(.+)$/i);
+    if (m) return { val: m[1].trim(), et: m[2].trim() };
+    m = s.match(/^(.+?)\s*(?:=>|->|→|⇒|:)\s*(.*)$/);
+    if (m) return { et: m[1].trim(), val: m[2].trim() };
+    m = s.match(/^(.+?)\s*=\s*(.+)$/);
+    if (m) return { et: m[1].trim(), val: m[2].trim() };
+    return { et: s, val: "" };
+  }
+  /** Normaliza una etiqueta igual que `labelRegex` (≥→>=, ≠→!=, "y"/","→&…). */
   function normEtiqueta(s) {
-    return normDuro(s)
-      .replace(/\bdistinto\b|\bdistintos\b|\bdiferente\b/g, "distinto")
+    return String(s).replace(/[−–—]/g, "-")
+      .replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/≠/g, "!=")
+      .toLowerCase().replace(/\s*(?:,|·|;|\by\b|\band\b|&)\s*/g, " & ")
       .replace(/\s+/g, " ").trim();
   }
   function checkPieces(ans, s) {
-    /* Se parte en "etiqueta → valor" y se empareja cada caso. */
-    var trozos = String(s).split(/[;|]|\n/).map(function (t) { return t.trim(); }).filter(Boolean);
+    var trozos = String(s).split(/[;|\n]/).map(function (t) { return t.trim(); }).filter(Boolean);
     if (!trozos.length) return null;
+    var re = ans.cases.map(function (c) { return labelRegex(c.when); });
     var usados = {}, nOk = 0;
     for (var i = 0; i < trozos.length; i++) {
-      var t = trozos[i];
-      var m = t.match(/^(.*?)(?:\s*(?:=>|->|:|=|\bcuando\b|\bsi\b|\bdonde\b)\s*)([-+].*|[^=]*)$/);
-      var et, val;
-      if (m) { et = m[1]; val = m[2]; }
-      else { et = t; val = ""; }
-      var clave = null, leido = null;
+      var pp = partirCaso(trozos[i]);
+      var et = normEtiqueta(pp.et);
+      var clave = -1;
       for (var j = 0; j < ans.cases.length; j++) {
         if (usados[j]) continue;
-        var want = normEtiqueta(ans.cases[j].when);
-        var got = normEtiqueta(et);
-        if (got === want || (got && got.indexOf(want) >= 0) || (want.indexOf(got) >= 0 && got.length >= 3)) {
-          clave = j; break;
-        }
+        if (re[j].test(et)) { clave = j; break; }
       }
-      if (clave === null) continue;
-      leido = leerValor(val);
+      if (clave < 0) continue;
+      var leido = leerValor(pp.val);
       if (leido === null) continue;
       usados[clave] = true;
       if (leido === valorCaso(ans.cases[clave].value)) nOk++;
@@ -502,11 +555,11 @@
     if (completos && nOk === total) return { ok: true, norm: piezasToString(ans) };
     if (nOk > 0) {
       return {
-        ok: false, norm: s,
+        ok: false, norm: piezasToString(ans),
         razon: "Has acertado " + nOk + " de " + total + " casos. La tabla correcta es: " + piezasToString(ans) + "."
       };
     }
-    return { ok: false, norm: s, razon: "La tabla de casos no cuadra. Debe ser: " + piezasToString(ans) + "." };
+    return { ok: false, norm: piezasToString(ans), razon: "La tabla de casos no cuadra. Debe ser: " + piezasToString(ans) + "." };
   }
 
   /* ---------------------------------------------------------------------
@@ -535,14 +588,18 @@
       var ans = problem && problem.answer;
       if (ans && (ans.kind === "existencia" || ans.kind === "params" || ans.kind === "piecewise-by-param")) {
         var pista = "Repasa el enunciado: hay que comprobar la condición de existencia (Bolzano) o el empalme.";
-        var s = normDuro(raw === undefined || raw === null ? "" : String(raw));
-        var r = ans.kind === "existencia" ? checkExistencia(ans, s)
-          : ans.kind === "params" ? checkParams(ans, s)
-            : checkPieces(ans, s);
+        var crudo = String(raw === undefined || raw === null ? "" : raw);
+        var r;
+        /* OJO: `params` y `piecewise-by-param` se PARTE la cadena cruda, así
+         * que no se puede normalizar antes (normDuro se come las comas y los
+         * puntos y coma, que son justo los separadores). */
+        if (ans.kind === "existencia") r = checkExistencia(ans, normDuro(crudo));
+        else if (ans.kind === "params") r = checkParams(ans, crudo);
+        else r = checkPieces(ans, crudo);
         if (r && r.ok) return { correct: true, normalized: r.norm };
         if (r) return { correct: false, normalized: r.norm, reason: r.razon + pista };
         return {
-          correct: false, normalized: String(raw === undefined || raw === null ? "" : raw).trim(),
+          correct: false, normalized: crudo.trim(),
           reason: "No entiendo esa respuesta. " + pista
         };
       }
@@ -662,6 +719,7 @@
           const opciones = rand.shuffle([correct].concat(opcIncorrectas));
           const ans = ansExistencia(true, [Q(BigInt(a)), Q(BigInt(b))], true);
           ans.options = opciones;
+          ans.correctOption = opciones.indexOf(correct);
           ans.accepts = ["sí", "si, existe y es único", "sí, existe exactamente un valor", "único", "si unico"];
 
           const pasos = [
@@ -721,6 +779,7 @@
         const opciones = rand.shuffle([correct].concat(opcIncorrectas));
         const ans = ansExistencia(false, [Q(BigInt(a)), Q(BigInt(b))]);
         ans.options = opciones;
+          ans.correctOption = opciones.indexOf(correct);
         ans.accepts = ["no", "no existe", "no existe ningun c"];
 
         const pasos = [
@@ -804,6 +863,7 @@
           const opciones = rand.shuffle([correct].concat(opcIncorrectas));
           const ans = ansExistencia(true, [Q.ZERO, "π/2"], true);
           ans.options = opciones;
+          ans.correctOption = opciones.indexOf(correct);
           ans.accepts = ["sí", "si, existe y es único", "único", "si unico"];
 
           const pasos = [
@@ -856,6 +916,7 @@
         const opciones = rand.shuffle([correct].concat(opcIncorrectas));
         const ans = ansExistencia(false, [Q.ZERO, "π/2"]);
         ans.options = opciones;
+          ans.correctOption = opciones.indexOf(correct);
         ans.accepts = ["no", "no existe", "no hay raiz"];
 
         const pasos = [
@@ -934,6 +995,7 @@
         const ans = ansExistencia(true, null, false, 3);
         ans.intervals = intervalos.map(function (iv) { return [Q(BigInt(iv[0])), Q(BigInt(iv[1]))]; });
         ans.options = opciones;
+          ans.correctOption = opciones.indexOf(correct);
         ans.accepts = ["sí", "si, existen 3 valores distintos", "3", "tres", "si existen tres"];
 
         const pasos = [
@@ -1132,21 +1194,20 @@
       const n = rand.pick([1, 2, 3, 4]);          /* log(x + eⁿ): ln(eⁿ) = n */
       const m = rand.pick([1, 2, 3]);
       const k = rand.pick([2, 3, 4]);
-      const pOffset = rand.pick([1, 2, 3]);
 
       const potE = AST.exp(AST.num(Q(BigInt(n))));
       const argLog = AST.add(AST.x(), potE);
       const logNodo = AST.ln(argLog);
 
-      let tramo1, ansQ, txt1, txt2, valorIzqDer;
+      let tramo1, ansQ, txt1, txt2, valorIzqDer, pOffsetUsado = 0;
       if (v === 3) {
         /* f(x) = a + m·x + p  (x ≤ 0)   ⟹  f(0) = a + p  = n  ⟹  a = n − p */
         const pOff = rand.pick([1, 2, 3].filter(function (t) { return t < n; }));
-        const pUsado = pOff || 1;
-        ansQ = Q(BigInt(n - pUsado));
-        tramo1 = AST.add(AST.add(AST.var("a"), AST.mul(AST.num(Q(BigInt(m))), AST.x())), AST.num(Q(BigInt(pUsado))));
-        txt1 = "a + " + m + "x + " + pUsado;
-        valorIzqDer = "a + " + m + "·0 + " + pUsado + " = a + " + pUsado;
+        pOffsetUsado = pOff || 1;
+        ansQ = Q(BigInt(n - pOffsetUsado));
+        tramo1 = AST.add(AST.add(AST.var("a"), AST.mul(AST.num(Q(BigInt(m))), AST.x())), AST.num(Q(BigInt(pOffsetUsado))));
+        txt1 = "a + " + m + "x + " + pOffsetUsado;
+        valorIzqDer = "a + " + m + "·0 + " + pOffsetUsado + " = a + " + pOffsetUsado;
       } else {
         ansQ = (v === 2) ? Q(BigInt(k * n)) : Q(BigInt(n));
         tramo1 = AST.add(AST.var("a"), AST.mul(AST.num(Q(BigInt(m))), AST.powN(AST.x(), 2)));
@@ -1190,7 +1251,7 @@
         ansRational(ansQ.add(Q.ONE)),          /* olvidó el signo de lo que arrastra */
         ansRational(ansQ.sub(Q.ONE)),
         ansRational(Q(BigInt(n === 1 ? 2 : 1))),  /* pensó que ln(e) = 1 siempre */
-        ansRational(Q(BigInt(n * n)))            /*-usó eⁿ² o confundió ln(eⁿ) con n²- */
+        ansRational(Q(BigInt(n * n)))            /* confundió ln(e^n) con n^2 */
       ];
 
       return buildProblem(this, rand, {
@@ -1219,7 +1280,7 @@
         steps: pasos,
         keyStep: 1,
         distractors: dist3(ans, distractores),
-        internal: { v: v, n: n, m: m, k: k, respuesta: ansQ.toString() }
+        internal: { v: v, n: n, m: m, k: (v === 2 ? k : 0), pOff: (v === 3 ? pOffsetUsado : 0), respuesta: ansQ.toString() }
       });
     }
   };
@@ -1529,7 +1590,7 @@
             absTxt(a) + " vale " + absMenor + " a la izquierda de " + a + " y " + absMayor + " a la derecha. " +
             "Hay que calcular los dos laterales POR SEPARADO; no se puede escribir |x − " + a + "| = x − " + a +
             " en todo el neighbourhood. Error típico: sustituir x = " + a + " (sale |0| = 0) y dar por hecho que el " +
-            "lateral vale lo mismo, o-developed tomar |límite| en vez del límite del valor absoluto.",
+            "lateral vale lo mismo, o tomar el valor absoluto del límite en vez del límite del valor absoluto.",
             expr, true),
           mkStep("Límite por la izquierda",
             "Para x < " + a + ":  f(x) = " + m + "x + " + n + " + " + absMenor + " = " + (m - 1) + "x + " + (n + (a > 0 ? a : -a)) +
@@ -1569,9 +1630,9 @@
           steps: pasos,
           keyStep: 0,
           distractors: dist3(ans, [
-            ansRational(Q(BigInt(m)).mul(Q(BigInt(a))).sub(Q(BigInt(n)))),   /* 2n en vez de +n */
-            ansRational(Q(BigInt(n)).mul(Q(BigInt(a))).add(Q(BigInt(m)))),   /*Confundió m con n */
-            ansRational(valor.add(Q.BigInt(a).mul(Q(BigInt(a)))))            /*Sumó el |x−a| de más */
+            ansRational(Q(BigInt(m)).mul(Q(BigInt(a)))),                      /* olvidó el término independiente n */
+            ansRational(Q(BigInt(n)).mul(Q(BigInt(a))).add(Q(BigInt(m)))),   /* confundió la pendiente m con el término n */
+            ansRational(valor.add(Q(BigInt(Math.abs(a)))))                    /* puso |x−a| = |a| en vez de 0 */
           ]),
           internal: { v: 2, m: m, n: n, a: a, valor: valor.toString() }
         });
@@ -1580,12 +1641,23 @@
       /* --- v = 3 : f(a) redefinida, discontinuidad evitable -------------- */
       {
         const valor = Q(BigInt(m)).mul(Q(BigInt(a))).add(Q(BigInt(n)));
-        const k = rand.pick([1, 2, 3, 4, 5, 6].filter(function (t) { return Q(BigInt(t)).eq(valor) === false; }))[0];
         const absNodo = AST.abs(AST.sub(AST.x(), AST.num(Q(BigInt(a)))));
         const lin = AST.add(AST.mul(AST.num(Q(BigInt(m))), AST.x()), AST.num(Q(BigInt(n))));
         const expr = AST.add(lin, absNodo);
         const exprTxt = m + "x + " + n + " + |x − " + a + "|";
+        /* El límite en x = a SIEMPRE vale m·a + n. Lo que decide si f es
+         * continua es el VALOR que se le da en el punto:
+         *   continua       ⟹  f(a) = m·a + n
+         *   discontinua    ⟹  f(a) ≠ m·a + n  (discontinuidad evitable)   */
         const continua = rand.bool(0.3);
+        let k, intentos = 0;
+        if (continua) {
+          k = valor.toNumber();                       /* entero: m, a y n lo son */
+        } else {
+          k = rand.pick([1, 2, 3, 4, 5, 6]);
+          while (Q(BigInt(k)).eq(valor) && intentos < 40) { k = rand.int(1, 20); intentos++; }
+          if (Q(BigInt(k)).eq(valor)) k = valor.toNumber() + 1;
+        }
 
         let opciones, correcto, ans;
         if (continua) {

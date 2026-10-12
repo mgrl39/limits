@@ -135,6 +135,11 @@
 
   function el(tag, props, hijos) {
     var n = document.createElement(tag);
+    // `math: true` es una prop OPT-IN: se recuerda aquí y se aplica DESPUÉS
+    // del bucle, porque el orden de las props no puede importar (si `math`
+    // fuera de antes que `text`, al aplicar el volcado aún no habría texto
+    // que maths). `text:` sigue siendo textContent para todo el mundo.
+    var maths = false;
     if (props) {
       for (var k in props) {
         var v = props[k];
@@ -142,12 +147,14 @@
         if (k === "class") n.className = v;
         else if (k === "text") n.textContent = v;
         else if (k === "html") n.innerHTML = v;
+        else if (k === "math") maths = (v === true);
         else if (k === "style") n.setAttribute("style", v);
         else if (k.slice(0, 2) === "on" && typeof v === "function") n.addEventListener(k.slice(2), v);
         else if (k === "dataset") { for (var d in v) n.dataset[d] = v[d]; }
         else n.setAttribute(k, v === true ? "" : v);
       }
     }
+    if (maths) ponerMaths(n);
     append(n, hijos);
     return n;
   }
@@ -162,6 +169,66 @@
         ? document.createTextNode(String(h)) : h);
     }
     return padre;
+  }
+
+  /* ---------- Matemática en línea dentro del texto (InlineMath) --------- */
+  /*
+   * El motor escribe la matemática como texto plano con notación tipo LaTeX
+   * ("x^3", "1^∞"). Con `text:` eso sale con el circunflejo a la vista. Aquí
+   * lo convertimos a superíndices de verdad (MathML nativo) SÓLO cuando el
+   * punto de render lo pide explícitamente con `math: true`.
+   *
+   * Por qué una prop opt-in y no cambiar `text:` a secas: `textContent` es un
+   * contrato que muchísimos tests y muchos `===` dan por bueno. Que el
+   * comportamiento por defecto no se mueva es más importante que ahorrar
+   * cinco caracteres en cada llamada.
+   *
+   * `window.InlineMath` es OPCIONAL a propósito: los tests cargan este
+   * fichero con un DOM mínimo y sin inline-math.js, y ahí el volcado se
+   * salta entero. Comportamiento idéntico al de hoy, cero riesgo.
+   */
+
+  /** true si este navegador tiene InlineMath cargado y usable. */
+  function hayInlineMath() {
+    var IM = global.InlineMath;
+    return !!(IM && typeof IM.nodes === "function" && typeof IM.has === "function");
+  }
+
+  /**
+   * Reemplaza el texto de `n` por su versión con superíndices de verdad.
+   * Si no hay nada que maths (o no hay InlineMath) no toca el nodo: es un
+   * atajo barato para que el DOM de siempre se quede igual, coma por coma.
+   */
+  function ponerMaths(n) {
+    if (!n || !hayInlineMath()) return n;
+    // Si `text:` recibió un nodo ya hecho, aquí no hay texto plano que maths.
+    if (n.childNodes && n.childNodes.length) return n;
+    var s = n.textContent;
+    if (!global.InlineMath.has(s)) return n;
+    n.textContent = "";
+    n.appendChild(global.InlineMath.nodes(s));
+    return n;
+  }
+
+  /**
+   * Texto con superíndices Unicode ("x^2" -> "x²"). Para ATRIBUTOS
+   * (title, aria-label…) y para cualquier sitio sin DOM: en un atributo no
+   * cabe MathML y en localStorage se persiste lo que el motor espera crudo.
+   */
+  function mathText(s) {
+    if (!hayInlineMath()) return s;
+    return global.InlineMath.text(s);
+  }
+
+  /** Vuelca `s` dentro de `n` ya maths. Para nodos hechos a mano. */
+  function appendMath(n, s) {
+    if (!n) return n;
+    if (!hayInlineMath()) {
+      n.appendChild(document.createTextNode(s === null || s === undefined ? "" : String(s)));
+      return n;
+    }
+    n.appendChild(global.InlineMath.nodes(s));
+    return n;
   }
 
   /* ---------- MathML ------------------------------------------------- */
@@ -450,6 +517,7 @@
 
   global.UI = {
     el: el, append: append, math: math, mathDe: mathDe,
+    mathText: mathText, appendMath: appendMath, ponerMaths: ponerMaths,
     cargar: cargar, guardar: guardar, reiniciar: reiniciar, sanea: sanea, porDefecto: porDefecto,
     cabecera: cabecera, pagina: pagina, ajustes: ajustes, montar: montar, remontar: remontar,
     plural: plural, haceCuanto: haceCuanto, chip: chip,

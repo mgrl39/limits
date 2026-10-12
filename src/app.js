@@ -60,16 +60,110 @@
     { id: "continuidad", name: "Continuidad", color: "--c-continuidad" }
   ];
 
+  /* --- InlineMath: matemática en línea dentro de la prosa ---------------- */
+  /*
+   * app.js NO importa ui-core.js (es autónomo), así que aquí vive su propia
+   * copia mínima del mecanismo. Mismo criterio y mismo nombre de prop:
+   *
+   *   el("div", { class: "step-d", text: s.detail, math: true })
+   *
+   * `math: true` significa "este texto es prosa que puede llevar notación
+   * LaTeX (x^3, a_n): conviértela a superíndices de verdad al pintarla".
+   * Sin la prop, `text:` sigue siendo textContent, que es lo queexpects
+   * media casa (y lo que comparan los tests con ===).
+   *
+   * `window.InlineMath` es opcional: tests/ui-spec.test.mjs carga sólo
+   * engine+theory-data+app en un vm con mini-DOM, sin inline-math.js. Ahí
+   * este volcado no hace nada y todo queda exactamente igual.
+   */
+
+  function hayInlineMath() {
+    var IM = global.InlineMath;
+    return !!(IM && typeof IM.nodes === "function" && typeof IM.has === "function");
+  }
+
+  /** Vuelca el texto del nodo en superíndices MathML. Idempotente y barato. */
+  function ponerMaths(node) {
+    if (!node || !hayInlineMath()) return node;
+    // `text:` con un nodo ya construido: no hay texto plano que maths.
+    if (node.childNodes && node.childNodes.length) return node;
+    var s = node.textContent;
+    if (!global.InlineMath.has(s)) return node;
+    node.textContent = "";
+    node.appendChild(global.InlineMath.nodes(s));
+    return node;
+  }
+
+  /**
+   * Texto con superíndices Unicode, para ATRIBUTOS (title, aria-label…).
+   * En un atributo no cabe MathML, y lo que se persiste en localStorage o se
+   * compara con === tiene que seguir siendo el texto crudo del motor.
+   */
+  function mathText(s) {
+    if (!hayInlineMath()) return s;
+    return global.InlineMath.text(s);
+  }
+
+  /**
+   * Segunda pasada sobre prosa que YA está en el DOM (el HTML que devuelve
+   * `Lim.solutionHtml` llega como cadena y se importa desde un <template>).
+   * Recorre los nodos de texto de los `selectores` dados y maths los que
+   * tienen algo convertible. Se salta cualquier subárbol <math>, que ya
+   * viene en MathML del motor y no hay que tocar.
+   */
+  function mathsEn(raiz, selectores) {
+    if (!raiz || !hayInlineMath() || !raiz.querySelectorAll) return raiz;
+    for (var s = 0; s < selectores.length; s++) {
+      var nodos;
+      try { nodos = raiz.querySelectorAll(selectores[s]); } catch (e) { continue; }
+      for (var i = 0; i < nodos.length; i++) mathsTextoHijo(nodos[i]);
+    }
+    return raiz;
+  }
+
+  /** Maths los nietos de texto de `n`, en profundidad, sin tocar <math>. */
+  function mathsTextoHijo(n) {
+    if (!n || !n.childNodes || !n.childNodes.length) return n;
+    // Copia: mathsTextoHijo mete nodos nuevos entre los hijos que recorremos.
+    var hijos = n.childNodes.slice();
+    for (var i = 0; i < hijos.length; i++) {
+      var h = hijos[i];
+      if (h.nodeType !== 3) {                       // 3 = nodo de texto
+        if (!esMath(h)) mathsTextoHijo(h);
+        continue;
+      }
+      var s = h.data === undefined || h.data === null ? h.textContent : h.data;
+      if (!global.InlineMath.has(s)) continue;
+      var frag = global.InlineMath.nodes(s);
+      if (!n.replaceChild) continue;
+      n.replaceChild(frag, h);
+    }
+    return n;
+  }
+
+  /** ¿Es este nodo (o su contenedor) parte de un árbol MathML? */
+  function esMath(n) {
+    if (!n || !n.nodeName) return false;
+    var nombre = String(n.nodeName).toLowerCase();
+    if (nombre === "math") return true;
+    if (n.namespaceURI === NS_MATH) return true;
+    return false;
+  }
+
   /* --- Creación de nodos ------------------------------------------------ */
 
   function el(tag, attrs, kids) {
     var node = document.createElement(tag);
+    // Opt-in: se aplica al final del bucle, para que el orden de las props
+    // no importe (ver la nota de arriba).
+    var maths = false;
     if (attrs) {
       for (var k in attrs) {
         if (!Object.prototype.hasOwnProperty.call(attrs, k)) continue;
         var v = attrs[k];
         if (v === null || v === undefined || v === false) continue;
         if (k === "class") node.className = v;
+        else if (k === "math") maths = (v === true);
         else if (k === "text") {
           // Si por error se pasa un nodo, lo añadimos en vez de imprimirlo.
           if (v && typeof v === "object" && v.nodeType) node.appendChild(v);
@@ -82,6 +176,7 @@
         else node.setAttribute(k, String(v));
       }
     }
+    if (maths) ponerMaths(node);
     if (kids !== null && kids !== undefined) append(node, kids);
     return node;
   }

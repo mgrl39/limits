@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="src/styles.css"></head><body>
+<div id="app"></div><div id="ctrl" class="app">x</div>
+<script>
+var a=document.getElementById("app"), c=document.getElementById("ctrl");
+a.className="app";
+var ca=getComputedStyle(a), cc=getComputedStyle(c);
+var out=["#app  padding="+ca.padding+" | maxW="+ca.maxWidth+" | display="+ca.display+" | x="+a.getBoundingClientRect().x,
+         ".app  padding="+cc.padding+" | maxW="+cc.maxWidth+" | x="+c.getBoundingClientRect().x,
+         "body padding="+getComputedStyle(document.body).padding,
+         "stylesheets="+document.styleSheets.length+" rules="+document.styleSheets[0].cssRules.length,
+         "appRect="+JSON.stringify(a.getBoundingClientRect().toJSON?)];
+var p=document.createElement("pre");p.style.cssText="position:fixed;top:0;left:0;background:#000;color:#0f0;z-index:9;font-size:12px;padding:10px;max-width:99%;white-space:pre-wrap";
+p.textContent=out.join("\n");document.body.appendChild(p);
+</script></body></html>
