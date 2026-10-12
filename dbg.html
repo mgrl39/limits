@@ -18,7 +18,10 @@ UI.montar("teoria","Teoría", construirTeoria);
     "toc x="+document.querySelector(".toc").getBoundingClientRect().x,
     "toc w="+document.querySelector(".toc").getBoundingClientRect().width,
     "body w="+document.body.getBoundingClientRect().width,
-    "innerWidth="+window.innerWidth];
+    "innerWidth="+window.innerWidth,
+    "padLeft="+cs.paddingLeft, "padTop="+cs.paddingTop,
+    "rule="+Array.prototype.map.call(document.styleSheets[0].cssRules,function(r){return r.selectorText}).filter(Boolean).join(" ~ ").slice(0,400),
+    "appRules="+(Array.prototype.filter.call(document.styleSheets[0].cssRules,function(r){return r.selectorText&&r.selectorText.indexOf(".app")>=0}).map(function(r){return r.selectorText+" {"+r.style.cssText+"}"}).join(" || "))];
   document.title=out.join(" | ");
   var p=document.createElement("pre");p.style.cssText="position:fixed;top:0;left:0;z-index:999;background:#000;color:#0f0;font-size:12px;padding:8px;max-width:100%";
   p.textContent=out.join("\n");document.body.appendChild(p);

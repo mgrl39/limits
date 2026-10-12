@@ -1053,7 +1053,7 @@
           "En x = " + p1 + " manda el primer trozo (x ≤ " + p1 + "), así que f(" + p1 + ") = " + e1Txt + " evaluado ahí = " +
           fmtQ(m1.mul(Q(BigInt(p1))).add(b1)) + ". Por la derecha tiende a a·" + p1 + " + 3. Igualamos: " +
           fmtQ(m1.mul(Q(BigInt(p1))).add(b1)) + " = a·" + p1 + " + 3  ⟹  a = " + fmtQ(aQ) + ". " +
-          "Error típico: (−" + p1 + ") se pasa al otro lado sin cambiar de signo, o直接把 el signo de 3 mal.",
+          "Error típico: pasar (−" + p1 + ") al otro lado sin cambiar de signo, o equivocarse con el signo del 3 al despejar.",
           AST.add(AST.mul(vA, AST.x()), AST.num(Q(3)))),
         mkStep("Segundo empalme (x = " + p2 + ")",
           "En x = " + p2 + " manda el segundo trozo, así que f(" + p2 + ") = a·" + p2 + " + 3 = " +
