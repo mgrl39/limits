@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Verificación final</title>
+<style>
+  body{background:#0b0e14;color:#c9d4e4;font:12.5px/1.55 ui-monospace,Menlo,monospace;padding:14px;margin:0}
+  .l{padding:1px 0}.ok{color:#4ade80}.bad{color:#f87171}.warn{color:#fbbf24}.hd{color:#8ab4ff;margin-top:10px;font-weight:700}
+  #summary{font-size:16px;font-weight:700;padding:8px 0;border-bottom:2px solid #223;margin-bottom:4px}
+  #app{margin-top:14px;border-top:1px solid #223;padding-top:8px}
+</style>
+</head>
+<body>
+<div id="summary">ejecutando…</div>
+<div id="out"></div>
+<div id="app"></div>
+<script src="../src/theory-data.js"></script>
+<script src="../src/engine.js"></script>
+<script src="../src/app.js"></script>
+<script>
+/* Flujo real: se hacen CLICS como un usuario, no se llaman internos. */
+const out = document.getElementById("out");
+let pass = 0, fail = 0;
+const put = (c, m) => out.insertAdjacentHTML("beforeend", `<div class="l ${c}">${c === "hd" ? "" : (c === "ok" ? "  ✔ " : "  ✖ ")}${m}</div>`);
+const P = m => { pass++; put("ok", m); };
+const F = m => { fail++; put("bad", m); };
+const W = m => put("warn", "  ! " + m);
+const H = m => put("hd", m);
+const A = (c, m) => { c ? P(m) : F(m); return !!c; };
+
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const vis = el => el && el.offsetParent !== null;
+const opts = () => $$("#app .opt").filter(vis);
+const click = (re, sel) => { const b = $$(sel || "#app button").find(x => re.test(x.textContent || "") && vis(x)); if (b) { b.click(); return true; } return false; };
+const errs = [];
+window.addEventListener("error", e => errs.push((e.message || "") + ":" + e.lineno));
+
+const App = window.App, Lim = window.Lim;
+try { localStorage.removeItem("limites:v1"); } catch (e) {}
+try { App.start($("#app")); }
+catch (e) { F("App.start() LANZA: " + (e && e.message) + " | " + ((e && e.stack || "").split("\n").slice(1, 4).join(" | "))); }
+H("1. Arranque y pantallas");
+A($$("#app .screen").length > 0, "la portada se monta");
+A(/Campaña/.test($("#app").textContent), "el botón de campaña está");
+for (const s of ["campana", "cuaderno", "teoria"]) {
+  App.state.screen = s; App.render();
+  A($$("#app .screen").length > 0, `pantalla «${s}» renderiza (${($("#app").textContent||"").length} chars)`);
+}
+
+H("2. Modo libre → debe arrancar una partida de verdad");
+App.state.screen = "portada"; App.render();
+A(click(/modo libre/i), "clic en «Modo libre»");
+A($$("#app math").length > 0, `el límite aparece en MathML (${$$("#app math").length} nodos)`);
+A(!!$("#app input"), "hay campo para responder");
+const prob = App.state.run && App.state.run.current;
+A(!!prob, "existe una partida activa");
+if (prob && prob.problem) {
+  const p = prob.problem;
+  A(!!p.answer, "el problema trae respuesta");
+  A(p.steps && p.steps.length >= 2, `trazado de ${p.steps ? p.steps.length : 0} pasos`);
+  A(p.quiz && p.quiz.options && p.quiz.options.length === 4, "el interrogatorio tiene 4 opciones");
+  const canon = Lim.answerToString(p.answer);
+  A(Lim.checkAnswer(p, canon).correct === true, `respuesta canónica «${canon}» se acepta`);
+  H("   enunciado: " + (Lim.ast.toPlain(p.statement.expr) || "").slice(0, 70));
+}
+
+H("3. Las tres políticas,=configurando por la interfaz");
+const setModo = (m) => { App.state.settings.modo = m; App.state.screen = "portada"; App.render(); click(/modo libre/i); };
+const setPol  = (p) => { App.state.settings.politica = p; App.render(); App.generateNext(); App.render(); };
+
+setModo("opciones");
+setPol("visible");
+A(opts().length === 4, `«visible» → ${opts().length} opciones sin tocar nada`);
+
+setModo("opciones"); setPol("boton");
+A(opts().length === 0, `«boton» → ${opts().length} opciones antes de pedir`);
+A($$("#app .opt").length === 0, "no hay ni nodos .opt ocultos: no se pueden leer del DOM");
+const vb = $$("#app button").find(b => /ver opciones/i.test(b.textContent || "") && vis(b));
+A(!!vb && !vb.disabled, "el botón «Ver opciones» está activo");
+if (vb) vb.click();
+A(opts().length === 4, `tras el clic → ${opts().length} opciones`);
+
+setModo("opciones"); setPol("examen");
+const vb2 = $$("#app button").find(b => /ver opciones/i.test(b.textContent || "") && vis(b));
+A(!!vb2, "examen: existe el botón");
+A(vb2 && vb2.disabled === true, "examen: arranca DESHABILITADO");
+A(opts().length === 0, `examen: ${opts().length} opciones sin intento previo`);
+const inp = $("#app input");
+A(!!inp, "examen: hay campo de texto (obligatorio antes de mirar)");
+if (inp) {
+  inp.value = "1234567";
+  inp.dispatchEvent(new Event("input", { bubbles: true }));
+  App.render();
+  const cb = $$("#app button").find(b => /comprobar/i.test(b.textContent || "") && vis(b));
+  A(cb && !cb.disabled, "«Comprobar» se habilita");
+  if (cb) {
+    cb.click(); App.render();
+    const vb3 = $$("#app button").find(b => /ver opciones/i.test(b.textContent || "") && vis(b));
+    A(vb3 && vb3.disabled === true, "tras FALLAR las opciones quedan bloqueadas para siempre");
+    A(opts().length === 0, `sigue sin verse ninguna opción (hay ${opts().length})`);
+  }
+}
+
+H("4. Escribir → sin opciones");
+App.state.settings.modo = "escribir"; App.state.settings.politica = "visible";
+App.state.screen = "portada"; App.render(); click(/modo libre/i);
+A(opts().length === 0, `modo escribir → ${opts().length} opciones`);
+A(!!$("#app input"), "el campo de texto está");
+
+H("5. Acertar → interrogatorio de método");
+App.state.settings.modo = "escribir"; App.render(); App.generateNext(); App.render();
+const pr2 = App.state.run && App.state.run.current && App.state.run.current.problem;
+if (pr2) {
+  const campo = $("#app input");
+  campo.value = Lim.answerToString(pr2.answer);
+  campo.dispatchEvent(new Event("input", { bubbles: true }));
+  App.render();
+  const c2 = $$("#app button").find(b => /comprobar/i.test(b.textContent || "") && vis(b));
+  if (c2) { c2.click(); App.render(); }
+  const t = $("#app").textContent || "";
+  A(/correcto|acierto|perfecto|¡Muy bien|✓/i.test(t), "la interfaz acusa el acierto");
+  const quizVisible = pr2.quiz && /técnica|indeterminaci|método|¿por qué/i.test(t);
+  A(quizVisible, "aparece el interrogatorio de método tras acertar");
+} else { W("no pude obtener un problema nuevo"); }
+
+H("6. Cuaderno y persistencia");
+const raw = localStorage.getItem("limites:v1");
+A(!!raw, "localStorage['limites:v1'] escrito");
+if (raw) { let d = null; try { d = JSON.parse(raw); } catch (e) {}
+  A(!!d, "JSON válido");
+  if (d) { for (const k of ["settings","stats","campaign","notebook"]) A(k in d, "clave «" + k + "»");
+    A(Array.isArray(d.notebook), "notebook es un array");
+    A(d.notebook.length > 0, `el cuaderno tiene ${d.notebook.length} entradas (se falló arriba)`);
+  } }
+let ok2 = false;
+try { localStorage.setItem("limites:v1", "{roto"); App.start($("#app")); ok2 = true; } catch (e) { W("lanza con JSON corrupto: " + e.message); }
+A(ok2, "sobrevive a localStorage corrupto");
+
+H("7. Sin errores de ejecución");
+A(errs.length === 0, errs.length ? errs.slice(0, 3).join(" | ") : "ninguno");
+
+const s = document.getElementById("summary");
+s.textContent = `  ${pass} correctas · ${fail} fallidas`;
+s.style.color = fail ? "#f87171" : "#4ade80";
+document.title = fail ? "FALLOS " + fail : "TODO OK";
+</script>
+</body>
+</html>

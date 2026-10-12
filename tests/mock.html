@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Límites — banco de pruebas (motor simulado)</title>
+<link rel="stylesheet" href="../src/styles.css">
+<style>
+  /* Sólo para el banco de pruebas: no forma parte de src/ */
+  #devbar {
+    position: fixed; right: 8px; bottom: 8px; z-index: 999;
+    display: flex; flex-wrap: wrap; gap: 4px; max-width: 92vw;
+    padding: 6px; border-radius: 12px;
+    background: rgba(6,10,18,.92); border: 1px solid rgba(255,255,255,.14);
+    font: 600 11px/1.4 ui-monospace, monospace; color: #a3b4ca;
+  }
+  #devbar button {
+    padding: 3px 7px; border-radius: 6px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.16); background: #18212f; color: #e9eff8;
+    font: inherit;
+  }
+  #devbar button:hover { background: #24324a; }
+  #devbar .sep { width: 1px; align-self: stretch; background: rgba(255,255,255,.12); }
+  body.testing { padding-bottom: 90px; }
+</style>
+</head>
+<body class="testing">
+<div id="app"></div>
+
+<div id="devbar">
+  <button data-go="portada">portada</button>
+  <button data-go="campana">campaña</button>
+  <button data-go="cuaderno">cuaderno</button>
+  <button data-go="teoria">teoría</button>
+  <span class="sep"></span>
+  <button data-modo="escribir">m:escribir</button>
+  <button data-modo="opciones">m:opciones</button>
+  <button data-modo="mixto">m:mixto</button>
+  <span class="sep"></span>
+  <button data-pol="visible">p:visible</button>
+  <button data-pol="boton">p:botón</button>
+  <button data-pol="examen">p:examen</button>
+  <span class="sep"></span>
+  <button data-act="level1">jugar n1</button>
+  <button data-act="nb">del cuaderno</button>
+  <button data-act="check">comprobar</button>
+  <button data-act="sol">solución</button>
+  <button data-act="skip">saltar</button>
+  <button data-act="reset">reset</button>
+</div>
+
+<script src="mock-engine.js"></script>
+<script src="../src/app.js"></script>
+<script>
+  window.App.start(document.getElementById("app"));
+
+  /* ---- atajos del banco de pruebas ---------------------------------- */
+  function $(sel) { return document.querySelector(sel); }
+
+  // El problema que hay en pantalla ahora mismo (o null).
+  function pick() {
+    return window.App.state.current;
+  }
+
+  document.getElementById("devbar").addEventListener("click", function (ev) {
+    var b = ev.target.closest("button");
+    if (!b) return;
+    var S = window.App.state;
+
+    if (b.dataset.go) { window.App.go(b.dataset.go); return; }
+
+    if (b.dataset.modo) {
+      S.settings.modo = b.dataset.modo;
+      window.App.render(); return;
+    }
+    if (b.dataset.pol) {
+      S.settings.politica = b.dataset.pol;
+      window.App.render(); return;
+    }
+
+    switch (b.dataset.act) {
+      case "level1":
+        window.App.go("campana");
+        var lvl = document.querySelectorAll(".level")[0];
+        if (lvl) lvl.click();
+        return;
+      case "nb": {
+        window.App.go("cuaderno");
+        var btn = document.querySelector(".btn-primary");
+        if (btn) btn.click();
+        else console.log("cuaderno vacío");
+        return;
+      }
+      case "check": {
+        var c = pick();
+        if (!c) return;
+        var f = $("#answer-field");
+        if (f && !f.disabled) {
+          f.value = window.Lim.answerToString(c.problem.answer);
+          f.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        var cb = $("#check-btn");
+        if (cb && !cb.disabled) cb.click();
+        return;
+      }
+      case "sol": {
+        var btns = document.querySelectorAll(".tools .btn");
+        for (var i = 0; i < btns.length; i++) {
+          if (/solución/i.test(btns[i].textContent) && !btns[i].disabled) { btns[i].click(); return; }
+        }
+        return;
+      }
+      case "skip": {
+        var t = document.querySelectorAll(".tools .btn");
+        for (var j = 0; j < t.length; j++) {
+          if (/Saltar/i.test(t[j].textContent)) { t[j].click(); return; }
+        }
+        return;
+      }
+      case "reset":
+        try { localStorage.removeItem("limites:v1"); } catch (e) {}
+        location.reload();
+        return;
+    }
+  });
+
+  // Expone helpers para el recorrido manual por consola
+  window.Dev = {
+    /** responde correctamente y contesta el quiz */
+    acertar: function () {
+      var c = window.App.state.current;
+      if (!c) return console.log("no hay problema");
+      var good = window.Lim.answerToString(c.problem.answer);
+      var f = $("#answer-field");
+      if (f && !f.disabled) {
+        f.value = good;
+        f.dispatchEvent(new Event("input", { bubbles: true }));
+        $("#check-btn").click();
+      }
+      // ahora el quiz
+      setTimeout(function () {
+        var idx = window.App.state.current.problem.quiz.correct;
+        var q = document.querySelectorAll(".qopt");
+        if (q[idx]) q[idx].click();
+      }, 30);
+    },
+    /** responde mal a propósito */
+    fallar: function () {
+      var c = window.App.state.current;
+      if (!c) return console.log("no hay problema");
+      var f = $("#answer-field");
+      if (f && !f.disabled) {
+        f.value = "123456789";
+        f.dispatchEvent(new Event("input", { bubbles: true }));
+        $("#check-btn").click();
+      }
+    },
+    siguiente: function () {
+      var b = document.querySelectorAll(".btn-ok, .quiz .btn-row .btn");
+      for (var i = 0; i < b.length; i++) if (/Siguiente/.test(b[i].textContent)) { b[i].click(); return; }
+      console.log("no hay botón siguiente");
+    },
+    estado: function () { return JSON.parse(JSON.stringify(window.App.state.stats)); },
+    cuaderno: function () { return window.App.state.notebook; }
+  };
+</script>
+</body>
+</html>

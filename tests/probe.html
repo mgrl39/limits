@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><title>sonda</title>
+<style>body{background:#0b0e14;color:#c9d4e4;font:12.5px/1.6 ui-monospace,Menlo,monospace;padding:14px}
+div{padding:1px 0}.ok{color:#4ade80}.bad{color:#f87171}.hd{color:#8ab4ff;font-weight:700;margin-top:8px}</style>
+</head>
+<body>
+<div id="o"></div>
+<div id="app"></div>
+<script src="../src/theory-data.js"></script>
+<script src="../src/engine.js"></script>
+<script src="../src/app.js"></script>
+<script>
+const o = document.getElementById("o");
+const p = (c, m) => o.insertAdjacentHTML("beforeend", `<div class="${c}">${c === 'hd' ? '' : (c === 'ok' ? '  ✔ ' : '  ✖ ')}${m}</div>`);
+window.addEventListener("error", e => p("bad", "ERROR GLOBAL: " + e.message + " @ " + (e.filename||"").split("/").pop() + ":" + e.lineno));
+
+function probe(name, fn) {
+  try { const r = fn(); p("ok", name + (r !== undefined ? " → " + r : "")); return r; }
+  catch (e) { p("bad", name + " LANZA: " + (e && e.message)); return null; }
+}
+
+p("hd", "Módulos");
+probe("typeof window.THEORY", () => typeof window.THEORY);
+probe("THEORY.sections.length", () => window.THEORY && window.THEORY.sections.length);
+probe("typeof window.Lim", () => typeof window.Lim);
+probe("Lim.generatorList().length", () => window.Lim && window.Lim.generatorList().length);
+probe("typeof window.App", () => typeof window.App);
+probe("claves de App", () => window.App && Object.keys(window.App).join(","));
+probe("App.state existe", () => !!(window.App && window.App.state));
+probe("App.state.screen", () => window.App && App.state.screen);
+probe("App.state.settings", () => window.App && JSON.stringify(App.state.settings));
+
+p("hd", "Arranque");
+probe("localStorage.clear", () => { localStorage.removeItem("limites:v1"); return "ok"; });
+probe("App.start(#app)", () => { App.start(document.getElementById("app")); return "sin excepción"; });
+probe("#app .screen", () => document.querySelectorAll("#app .screen").length);
+probe("longitud del texto", () => (document.getElementById("app").textContent || "").length);
+probe("h1/h2 en portada", () => document.querySelectorAll("#app h1,#app h2").length);
+
+p("hd", "Pantallas");
+for (const s of ["campana", "cuaderno", "teoria", "juego", "portada"]) {
+  probe("goto " + s, () => { App.state.screen = s; App.render(); return document.querySelectorAll("#app .screen").length + " nodos, " + (document.getElementById("app").textContent||"").length + " chars"; });
+}
+
+p("hd", "Juego");
+probe("set escribir/visible + generateNext", () => {
+  App.state.settings.modo = "escribir"; App.state.settings.politica = "visible";
+  App.state.screen = "juego"; App.generateNext(); App.render();
+  return document.querySelectorAll("#app math").length + " nodos math";
+});
+probe("input presente", () => document.querySelectorAll("#app input").length);
+probe("generateNext otra vez", () => { App.generateNext(); App.render(); return document.querySelectorAll("#app math").length + " math"; });
+probe("claves del problema actual", () => {
+  const st = App.state;
+  const cand = st.current || st.problema || st.prob;
+  return cand ? Object.keys(cand).join(",") : "no encontrado; claves de state: " + Object.keys(st).join(",");
+});
+
+p("hd", "Opciones por política");
+for (const pol of ["visible", "boton", "examen"]) {
+  probe("pol=" + pol + " -> nº .opt visibles", () => {
+    App.state.settings.modo = "opciones"; App.state.settings.politica = pol;
+    App.generateNext(); App.render();
+    return document.querySelectorAll("#app .opt").length + " nodos, " +
+      [...document.querySelectorAll("#app .opt")].filter(e => e.offsetParent !== null).length + " visibles";
+  });
+}
+p("hd", "fin");
+</script>
+</body>
+</html>

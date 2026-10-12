@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Llista 1 completa — Aprendre i practicar</title>
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<div class="app" id="l1">
+  <header class="topbar">
+    <button class="btn btn-ghost icon-btn" id="l1home" title="Inici" aria-label="Inici">∫</button>
+    <div class="brand"><span class="brand-mark">∫</span><span>Llista 1 · Càlcul</span></div>
+    <div class="topbar-stats"><span class="stat" id="l1prog">0/12</span></div>
+  </header>
+  <section class="screen" id="l1view"></section>
+</div>
+
+<script src="src/engine.js"></script>
+<!-- Extensió opcional developed per un altre agent: si existeix, es carrega
+     i es queda com a generadors extra. NO es modifica ni es fa dependència. -->
+<script src="src/gen-avanzados.js" onerror="void 0"></script>
+<script>
+/* =====================================================================
+ * lista1-practice.html — MÒDUL AUTOCONTINGUT PER APRENDRE LA LLISTA 1
+ * ---------------------------------------------------------------------
+ * AQUEST FITXER NO TOCA RES DEL JOC. Llegeix `src/engine.js` (window.Lim)
+ * en mode només lectura i afegeix aquí mateix el mòdul `L1` amb el que
+ * falta per cobrir la Llista 1 COMPLETA (12 exercicis, 32 apartats):
+ *
+ *   · tendència numèrica de下文limits (laterals, ±∞, radicals, exponencials)
+ *   · Bolzano / Darboux: existirència d'arrels + bisecció
+ *   · continuïtat de funcions a trossos (2, 3 i 4 trossos)
+ *   · tangents: recta tangent i punts on la tangent passa per un punt
+ *   · verificació de respostes amb tolerància
+ *
+ * TOT el contingut matemàtic ha estat verificat numèricament una per una.
+ * No escriu a `limites:v1` (la clau del joc): usa la seva `llista1:v1`.
+ * ===================================================================== */
+(function () {
+"use strict";
+
+var NS_MATH = "http://www.w3.org/1998/Math/MathML";
+var KEY = "llista1:v1";
+var L = null, Q = null, Poly = null, A = null;
+var L1 = {};   /* módulo propio: lo que el motor de 23 generadores NO cubre */
+var EX = [];
+
+/* ---------------------------------------------------------------- */
+/* 0. Utilitats DOM                                                   */
+/* ---------------------------------------------------------------- */
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+}
+function btn(cls, label, on) { var b = el("button", cls, label); if (on) b.addEventListener("click", on); return b; }
+function card() { return el("div", "card"); }
+function small(t) { return el("div", "small muted", t); }
+function mkn(tag, props, kids) {
+  var n = document.createElementNS(NS_MATH, tag);
+  if (props) for (var k in props) {
+    if (props[k] === null || props[k] === undefined || props[k] === false) continue;
+    if (k === "text") n.textContent = props[k]; else n.setAttribute(k, String(props[k]));
+  }
+  if (kids) for (var i = 0; i < kids.length; i++) if (kids[i]) n.appendChild(kids[i]);
+  return n;
+}
+function mathBox(expr) {
+  var box = el("div", "formula");
+  try { box.appendChild(A.toMathML(expr)); }
+  catch (e) { box.appendChild(el("span", "muted", String(expr))); }
+  return box;
+}
+/* Fraccció i potència en MathML, per escriure enunciats a mà */
+function frac(a, b) { return mkn("mfrac", null, [a, b]); }
+function pw(a, b) { return mkn("msup", null, [a, b]); }
+function mn(t) { return mkn("mn", { text: String(t) }); }
+function mi(t) { return mkn("mi", { text: String(t) }); }
+function mo(t) { return mkn("mo", { text: String(t) }); }
+function mtxt(t) { return mkn("mtext", { text: String(t) }); }
+function limEn(target, expr, extra) {           /* lim_{x→a} f(x) = ? */
+  return mkn("math", { display: "inline" }, [
+    mkn("munder", null, [mo("lim"), target]),
+    mo(" "), expr, extra ? extra : null, mo("="), mtxt("?")
+  ]);
+}
+function xto(a, side) {                          /* x → a  (o x → 0⁺) */
+  var k = [mi("x"), mo("→"), (typeof a === "number" ? mn(a) : a)];
+  if (side === "+") k.push(mkn("msup", null, [mn(""), mo("+")]));
+  if (side === "-") k.push(mkn("msup", null, [mn(""), mo("−")]));
+  return mkn("mrow", null, k);
+}
+function xinf(s) { return mkn("mrow", null, [mi("x"), mo("→"), mo(s === "-" ? "−∞" : "+∞")]); }
+
+/* ---------------------------------------------------------------- */
+/* 1. L1 — evaluator numèric del AST (per al que el motor no resol)   */
+/* ---------------------------------------------------------------- */
+L1.ev = function (n, x) {
+  switch (n.t) {
+    case "num": return n.v.toNumber();
+    case "var": return x;
+    case "pi": return Math.PI;
+    case "neg": return -L1.ev(n.a, x);
+    case "add": { var s = 0; for (var i = 0; i < n.terms.length; i++) s += L1.ev(n.terms[i], x); return s; }
+    case "sub": return L1.ev(n.a, x) - L1.ev(n.b, x);
+    case "mul": { var p = 1; for (var j = 0; j < n.fs.length; j++) p *= L1.ev(n.fs[j], x); return p; }
+    case "div": return L1.ev(n.a, x) / L1.ev(n.b, x);
+    case "sqrt": return Math.sqrt(L1.ev(n.a, x));
+    case "cbrt": return Math.cbrt(L1.ev(n.a, x));
+    case "ln": return Math.log(L1.ev(n.a, x));
+    case "exp": return Math.exp(L1.ev(n.a, x));
+    case "cos": return Math.cos(L1.ev(n.a, x));
+    case "sin": return Math.sin(L1.ev(n.a, x));
+    case "tan": return Math.tan(L1.ev(n.a, x));
+    case "abs": return Math.abs(L1.ev(n.a, x));
+    case "pow": return Math.pow(L1.ev(n.a, x), L1.ev(n.b, x));
+    default: return NaN;
+  }
+};
+
+/* ---------------------------------------------------------------- */
+/* 2. L1 — tendència observada (decideix el límit DE VERDAT)         */
+/* ---------------------------------------------------------------- */
+function obs(fn, xs) { var o = [], i; for (i = 0; i < xs.length; i++) { try { o.push(fn(xs[i])); } catch (e) { o.push(NaN); } } return o; }
+function tendencia(vals) {
+  var fin = vals.filter(isFinite), last;
+  if (!fin.length) return { tipo: "indefinido", valor: NaN, signo: 0 };
+  last = fin[fin.length - 1];
+  if (Math.abs(last) > 1e9) {
+    var sg = {}, ns = 0, i;
+    for (i = 0; i < fin.length; i++) { var s = Math.sign(fin[i]); if (!(s in sg)) { sg[s] = 1; ns++; } }
+    if (ns > 1) return { tipo: "oscila", valor: NaN, signo: 0 };
+    return { tipo: "infinito", valor: last, signo: Math.sign(last) };
+  }
+  var estable = true;
+  for (i = fin.length - 4; i < fin.length; i++) if (Math.abs(fin[i] - last) > 1e-6 * Math.max(1, Math.abs(last))) estable = false;
+  return { tipo: estable ? "finito" : "oscila", valor: last, signo: Math.sign(last) };
+}
+function muPunt(a, side) { var o = [], i, e; for (i = 1; i <= 11; i++) { e = Math.pow(10, -i); if (side === "+") o.push(a + e); else if (side === "-") o.push(a - e); else { o.push(a - e); o.push(a + e); } } return o; }
+function muInf(s) { var o = [], k; for (k = 4; k <= 15; k++) o.push(s * Math.pow(10, k)); return o; }
+
+/** Laterals / total en un punt. side: '+' | '-' | null */
+L1.limitePunt = function (fn, a, side) {
+  if (side) { var t = tendencia(obs(fn, muPunt(a, side))); return { kind: t.tipo === "finito" ? "finite" : t.tipo === "infinito" ? "inf" : "dne", valor: t.valor, sign: t.signo }; }
+  var li = tendencia(obs(fn, muPunt(a, "-"))), ld = tendencia(obs(fn, muPunt(a, "+")));
+  var igual = li.tipo === ld.tipo &&
+    (li.tipo !== "finito" || Math.abs(li.valor - ld.valor) <= 1e-6 * Math.max(1, Math.abs(li.valor))) &&
+    (li.tipo !== "infinito" || li.signo === ld.signo);
+  if (!igual) return { kind: "dne", li: li, ld: ld };
+  if (li.tipo === "finito") return { kind: "finite", valor: li.valor };
+  if (li.tipo === "infinito") return { kind: "inf", sign: li.signo };
+  return { kind: "dne" };
+};
+/** Límit a l'infinit. */
+L1.limiteInf = function (fn, signo) {
+  var t = tendencia(obs(fn, muInf(signo)));
+  return t.tipo === "finito" ? { kind: "finite", valor: t.valor }
+    : t.tipo === "infinito" ? { kind: "inf", sign: t.signo } : { kind: "dne" };
+};
+/* Per a logaritmes el tendència és molt lenta: prova amb molts punts i
+   predicat "el quocient de termes dominants". */
+L1.limiteLog = function (fn) {
+  var xs = [], k; for (k = 8; k <= 18; k++) xs.push(Math.pow(10, k));
+  var v = obs(fn, xs).filter(isFinite);
+  if (!v.length) return { kind: "dne" };
+  var ult = v[v.length - 1], prev = v[v.length - 2];
+  /* si els últims dos ja coincideixen a 4 xifres, hi ha convergir */
+  return { kind: "finite", valor: ult, convergit: Math.abs(ult - prev) <= 1e-4 * Math.max(1, Math.abs(ult)) };
+};
+
+/* ---------------------------------------------------------------- */
+/* 3. L1 — Bolzano / Darboux                                          */
+/* ---------------------------------------------------------------- */
+L1.bolzano = function (fn, a, b, tol) {
+  tol = tol || 1e-10;
+  var fa = fn(a), fb = fn(b), lo, hi, mid, fm, n = 0;
+  if (!(isFinite(fa) && isFinite(fb))) return { ok: false, motiu: "f no és contínua (o no defineda) a [a,b]" };
+  if (fa === 0) return { ok: true, fa: fa, fb: fb, raiz: a, n: 0 };
+  if (fb === 0) return { ok: true, fa: fa, fb: fb, raiz: b, n: 0 };
+  if (fa * fb > 0) return { ok: false, fa: fa, fb: fb, motiu: "mateix signe als dos extrems: Bolzano NO s'aplica" };
+  lo = a; hi = b;
+  while (hi - lo > tol && n < 300) {
+    mid = (lo + hi) / 2; fm = fn(mid); n++;
+    if (fa * fm <= 0) { hi = mid; fb = fm; } else { lo = mid; fa = fm; }
+  }
+  return { ok: true, fa: fa, fb: fb, raiz: (lo + hi) / 2, intervalo: [lo, hi], n: n };
+};
+
+/* ---------------------------------------------------------------- */
+/* 4. L1 — Continuïtat de funcions a trossos                          */
+/* ---------------------------------------------------------------- */
+/* trossos: [{op:'<='|'>'|'<'|'>='|':', a:number, expr:AST}, ...] */
+L1.continuidad = function (trossos, at) {
+  var tEsq = null, tDre = null, tPunt = null, i, t;
+  for (i = 0; i < trossos.length; i++) {
+    t = trossos[i];
+    if (t.op === "<" || t.op === "<=") if (at <= t.a) tEsq = t.expr;
+    if (t.op === ">" || t.op === ">=") if (at >= t.a) tDre = t.expr;
+    if (t.op === ":") tPunt = t.expr;
+  }
+  if (!tEsq && !tPunt) return { tipo: "No està definida a l'esquerra", definida: false };
+  if (!tDre && !tPunt) return { tipo: "No està definida a la dreta", definida: false };
+  /* tEsq / tDre / tPunt ja SÓN el node AST (no un objecte amb .expr) */
+  var li = L1.limitePunt(function (x) { return L1.ev(tEsq, x); }, at, "-");
+  var ld = L1.limitePunt(function (x) { return L1.ev(tDre || tPunt, x); }, at, "+");
+  var existe = li.kind === ld.kind &&
+    (li.kind !== "finite" || Math.abs(li.valor - ld.valor) <= 1e-6 * Math.max(1, Math.abs(li.valor))) &&
+    (li.kind !== "inf" || li.sign === ld.sign);
+  var fa;
+  if (tPunt) fa = L1.ev(tPunt, at);
+  else {
+    var trobat = null;
+    for (i = 0; i < trossos.length; i++) {
+      var u = trossos[i];
+      var dins = (u.op === "<=" && at <= u.a) || (u.op === ">=" && at >= u.a) ||
+                 (u.op === "<" && at < u.a) || (u.op === ">" && at > u.a) || (u.op === ":" && at === u.a);
+      if (dins) trobat = u.expr;
+    }
+    fa = trobat ? L1.ev(trobat, at) : NaN;
+  }
+  var definida = isFinite(fa);
+  var limite = existe ? (li.kind === "finite" ? li.valor : (li.kind === "inf" ? li.sign * Infinity : NaN)) : NaN;
+  var coincide = definida && existe && isFinite(limite) && Math.abs(limite - fa) <= 1e-6 * Math.max(1, Math.abs(limite));
+  var tipo;
+  if (!definida) tipo = "No està definida en el punt → no pot ser contínua";
+  else if (!existe) tipo = "El límit no existeix (els laterals no coincideixen) → salt de 2a gènere";
+  else if (!isFinite(limite)) tipo = "Límit infinit → salt infinit de 1a espècie";
+  else if (coincide) tipo = "CONTÍNUA (les 3 condicions es compleixen)";
+  else tipo = "Límit = " + limite.toPrecision(6) + " però f(a) = " + fa.toPrecision(6) + " → discontinuïtat evitable";
+  return { definida: definida, existe: existe, limite: limite, fa: fa, coincide: coincide, tipo: tipo, li: li, ld: ld };
+};
+
+/* ---------------------------------------------------------------- */
+/* 5. L1 — Tangents                                                  */
+/* ---------------------------------------------------------------- */
+L1.tangent = function (num, den, x0) {
+  var nq = num.deriv().mul(den).sub(num.mul(den.deriv()));
+  var at = Q(x0);
+  return { ordenada: num.eval(at).div(den.eval(at)), pendent: nq.eval(at).div(den.eval(at).mul(den.eval(at))) };
+};
+L1.tangentsPer = function (p, px, py) {
+  var cond = p.add(p.deriv().mul(Poly.lin(-1, px))).sub(Poly.constant(py));
+  return { cond: cond, raices: cond.rationalRoots() };
+};
+
+/* ---------------------------------------------------------------- */
+/* 6. L1 — Verificació de respostes                                  */
+/* ---------------------------------------------------------------- */
+/**
+ * Converteix un text en número, entendent la convenció mathematiciansa
+ * espanyola: la COMA és separador decimal (1,5) i el PUNT el de milers.
+ * Retorna NaN si no és un número.
+ */
+function aNum(s) {
+  s = String(s).trim();
+  if (!s) return NaN;
+  /* El signe el deixa el parse de cada operand; no el traiem a mà, així
+     -3/2 es calcula com -(3/2) i no com +(3/2). */
+  if (s.indexOf("/") > 0) {
+    var pp = s.split("/");
+    if (pp.length !== 2) return NaN;
+    var a = aNum(pp[0]), b = aNum(pp[1]);
+    return (b === 0) ? NaN : a / b;
+  }
+  /* 1.234.567,89 → 1234567.89  ·  1,5 → 1.5  ·  1.5 → 1.5 */
+  if (/^[-+]?\d{1,3}(\.\d{3})+,\d+$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/^[-+]?\d+,\d+$/.test(s)) s = s.replace(",", ".");
+  else if (/^[-+]?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+  if (!/^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i.test(s)) return NaN;
+  return parseFloat(s);
+}
+/**
+ * Divideix una resposta en llista de termes.
+ * "1, 3"        → llista de 2 enters
+ * "3/2, -3/2"   → llista de fraccions
+ * "1,6; 8,2; 3,2" → llista de decimals (coma = decimal, ';' = separador)
+ * "1,5"         → UN decimal, no una llista
+ */
+function aParts(s) {
+  s = String(s).trim();
+  if (!s) return [];
+  /* ';' sempre separa termes de llista */
+  if (s.indexOf(";") >= 0) {
+    return s.split(";").map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  if (s.indexOf(",") < 0) return [s];
+  var parts = s.split(",").map(function (x) { return x.trim(); });
+  if (parts.length < 2) return [s];
+  /* Tots els termes han de ser "nombres simples" (amb o sense fracció).
+     Si en un terme hi ha un signe, un parèntesi o lletres, la coma era
+     decimal i el text SÓN un únic número. */
+  var totsNombres = parts.every(function (x) {
+    return /^[-+]?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(x) ||
+           /^[-+]?\d+\/\d+$/.test(x) ||
+           /^[-+]?\d+(\.\d+)?\/\d+$/.test(x);
+  });
+  return totsNombres ? parts : [s];
+}
+/**
+ * correct pot ser number | string. Accepta 3/4, 1,5, dne, +inf, x=3, sí/no
+ * i llistes ("1,5; 8/5; 16/5" o "1, 3" o "1,5, 8,2, 3,2").
+ */
+L1.check = function (correct, user) {
+  var norm = function (s) {
+    return String(s).toLowerCase().replace(/−/g, "-").replace(/∞/g, "inf").replace(/[º°]/g, "").trim();
+  };
+  var u = norm(user);
+  if (!u) return false;
+  var c = correct;
+
+  /* respostes alternatives: qualsevol val */
+  if (Array.isArray(c)) return c.some(function (z) { return L1.check(z, user); });
+
+  /* --- cas d'una llista de valors a tots dos costats --- */
+  var cParts = (typeof c === "string") ? aParts(c) : null;
+  var uParts = aParts(u);
+  if (cParts && cParts.length > 1 && uParts.length > 1) {
+    return mateixaLlista(cParts, uParts);
+  }
+
+  if (typeof c === "number") {
+    var v = aNum(u);
+    return isFinite(v) && Math.abs(v - c) <= 1e-6 * Math.max(1, Math.abs(c));
+  }
+
+  var cn = norm(c).replace(/\s+/g, "");
+  var un = u.replace(/\s+/g, "");
+  if (cn === un) return true;
+
+  if (/^(dne|noexiste)$/.test(cn) && /^(dne|noexiste|no|indefinido|nolimiteexiste|sinlimite)$/.test(un)) return true;
+  if (cn === "+inf" && /^(inf|\+inf|infinito|\+infinito|infinity)$/.test(un)) return true;
+  if (cn === "-inf" && /^(-inf|-infinito|-infinity)$/.test(un)) return true;
+  if (cn === "si" && /^(si|s|yes|continua|continuo)$/.test(un)) return true;
+  if (cn === "no" && /^(no|n|false|discontinua|discontinuo)$/.test(un)) return true;
+  if (/^[a-z]+=/.test(cn) && /^[a-z]+=/.test(un)) {
+    if (cn.replace(/^[a-z]+=/, "") === un.replace(/^[a-z]+=/, "")) return true;
+  }
+
+  /* comparació numèrica tolerante: cobreix "3/2" vs "1,5" vs "-1.5" */
+  var t1 = aNum(cn), t2 = aNum(un);
+  if (isFinite(t1) && isFinite(t2)) return Math.abs(t1 - t2) <= 1e-6 * Math.max(1, Math.abs(t1));
+
+  return false;
+};
+/* dues llistes de valors són iguals si tenen el mateix nombre de termes,
+   tots valen entre si (amb tolerància) i el multiconjunt coincideix */
+function mateixaLlista(a, b) {
+  if (a.length !== b.length) return false;
+  var used = new Array(b.length).fill(false);
+  for (var i = 0; i < a.length; i++) {
+    var x = aNum(a[i]), hit = -1;
+    for (var j = 0; j < b.length; j++) {
+      if (used[j]) continue;
+      var y = aNum(b[j]);
+      var ok;
+      if (isFinite(x) && isFinite(y)) ok = Math.abs(x - y) <= 1e-6 * Math.max(1, Math.abs(x));
+      else ok = String(a[i]).toLowerCase() === String(b[j]).toLowerCase();
+      if (ok) { hit = j; break; }
+    }
+    if (hit < 0) return false;
+    used[hit] = true;
+  }
+  return true;
+}
+
+/* ---------------------------------------------------------------- */
+/* 7. RNG determinista (reutilitza el motor)                         */
+/* ---------------------------------------------------------------- */
+function iint(r, a, b) { return r.int(a, b); }
+function f2(n) { return Math.round(n * 1e6) / 1e6; }
+function numV(v) { return A.num(v); }
+function V(n) { return A.var(n); }
+function ratioAST(num, den) { return A.div(num.toAST(), den.toAST()); }
+
+/* ---------------------------------------------------------------- */
+/* 8. Els 12 exercicis (tOT verificat numèricament)                   */
+/* ---------------------------------------------------------------- */
+
+/* --- 1 · Bolzano: existeix c amb f(c) = -1 ----------------------- */
+EX.push({
+  n: 1, tipus: "teorema", títol: "Bolzano: existeix c amb f(c) = −1",
+  aprens: "Bolzano: si f és contínua a [a,b] i f(a), f(b) tenen signe diferent, hi ha c ∈ (a,b) amb f(c)=0. " +
+    "Aquí busquem f(c) = −1, així que definim g(x) = f(x) + 1 i busquem els zeros de g. " +
+    "Truc: primer troba un interval on f estigui clarament per damunt i per sota de −1.",
+  make: function (r) {
+    var k = iint(r, 1, 3);
+    /* f(x) = x³ - k x² + x ; g = f + 1 */
+    var f = function (x) { return x * x * x - k * x * x + x; };
+    var g = function (x) { return f(x) + 1; };
+    var bo = L1.bolzano(g, -2, 0);
+    return {
+      problema: "Sigui f(x) = x³ − " + k + "x² + x. Demostreu que hi ha un c ∈ (−2, 0) tal que f(c) = −1.",
+      enunciat: limEn(xto(0, null), mkn("mrow", null, [pw(mi("x"), mn(3)), mo("−"), mn(k), pw(mi("x"), mn(2)), mo("+"), mi("x")])),
+      respostes: bo.ok ? [f2(bo.raiz)] : [],
+      revisio: [
+        "Volem f(c) = −1 ⇔ g(c) = 0 amb g(x) = f(x) + 1 = x³ − " + k + "x² + x + 1 (polinomi → contínua a ℝ).",
+        "g(−2) = " + g(-2).toFixed(4) + " i g(0) = " + g(0).toFixed(4) + (bo.ok ? " → signe diferent." : " → mateix signe, canvia l'interval."),
+        "Bolzano: hi ha c ∈ (−2,0) amb g(c)=0, és a dir f(c) = −1. ∎",
+        "Per bisecció, c ≈ " + (bo.ok ? bo.raiz.toFixed(8) : "—") + "."
+      ],
+      hint: "g(x) = f(x) + 1. Avalua g als extrems d'un interval on hi hagi canvi de signe."
+    };
+  }
+});
+
+/* --- 2 · Bolzano: sin x + 2x − 1 = 0 a [0, π/2] ------------------ */
+EX.push({
+  n: 2, tipus: "teorema", títol: "Bolzano: sin x + 2x − 1 = 0 a [0, π/2]",
+  aprens: "Mateix teorema que l'exercici 1, però l'interval acaba en π/2 (irracional) i la funció no és polinòmica. " +
+    "El que fa funcionar Bolzano és: (a) continuïtat a tot l'interval, (b) canvi de signe als extrems.",
+  make: function (r) {
+    var k = iint(r, 1, 3);   /* sin x + k x − 1 = 0 */
+    var g = function (x) { return Math.sin(x) + k * x - 1; };
+    var bo = L1.bolzano(g, 0, Math.PI / 2);
+    return {
+      problema: "Demostreu que sin x + " + k + "x − 1 = 0 té almenys una arrel a [0, π/2].",
+      enunciat: limEn(xto(0, null), A.sin(V("x")), mo("+" + k + "x−1=0")),
+      respostes: bo.ok ? [f2(bo.raiz)] : [],
+      revisio: [
+        "g(x) = sin x + " + k + "x − 1 és contínua a [0, π/2] (sin és contínua i la resta és polinòmica).",
+        "g(0) = " + g(0).toFixed(4) + " (negatiu) i g(π/2) = " + g(Math.PI / 2).toFixed(4) + " (positiu).",
+        "Signe diferent als extrems i continuïtat → per Bolzano hi ha c ∈ (0, π/2) amb g(c) = 0. ∎",
+        "Bisecció: c ≈ " + (bo.ok ? bo.raiz.toFixed(8) : "—") + "."
+      ],
+      hint: "Aplica Bolzano: comprova continuitat a [0, π/2] i calcula g(0) i g(π/2)."
+    };
+  }
+});
+
+/* --- 3 · Tres reals amb x³ = 3x + 1 ----------------------------- */
+EX.push({
+  n: 3, tipus: "teorema", títol: "Tres reals tals que x³ = 3x + 1",
+  aprens: "Un cúbic té com a molt 3 arrels reals. Per veure'n tres, busca tres intervals on el polinomi " +
+    "canviï de signe: a cada canvi de signe li correspon una arrel, i com que el grau és 3, ja les tens totes. " +
+    "⚠ Atenció a l'enunciat: el text original diu «x³ = 3(x+1)», que només té UNA arrel real. " +
+    "La versió amb tres arrels és x³ = 3x + 1 (verificat: Δ = 81 > 0).",
+  make: function (r) {
+    var g = function (x) { return x * x * x - 3 * x - 1; };
+    var ints = [[-2, -1], [-1, 0], [1, 2]];
+    var trob = [], rev = ["Sigui g(x) = x³ − 3x − 1, contínua a ℝ (polinomi)."];
+    for (var i = 0; i < ints.length; i++) {
+      var bo = L1.bolzano(g, ints[i][0], ints[i][1]);
+      if (bo.ok) {
+        trob.push(f2(bo.raiz));
+        rev.push("A [" + ints[i][0] + ", " + ints[i][1] + "]: g(" + ints[i][0] + ") = " + bo.fa.toFixed(4) +
+          " i g(" + ints[i][1] + ") = " + bo.fb.toFixed(4) + " → canvi de signe → hi ha una arrel.");
+      } else {
+        rev.push("A [" + ints[i][0] + ", " + ints[i][1] + "]: g(" + ints[i][0] + ") = " + bo.fa.toFixed(4) +
+          " i g(" + ints[i][1] + ") = " + bo.fb.toFixed(4) + " → mateix signe, cap arrel en aquest interval.");
+      }
+    }
+    rev.push("Heu trobat " + trob.length + " arrels en intervals diferents. Com que el grau és 3, no n'hi ha cap més.");
+    rev.push("Les tres arrels: " + trob.map(function (v) { return v.toFixed(4); }).join(", ") + " (Δ = 81 > 0 ho confirma).");
+    return {
+      problema: "Demostreu que hi ha tres reals tals que el seu cub és igual a tres vegades el nombre MÉS 1. " +
+        "(és a dir: x³ = 3x + 1)",
+      enunciat: A.sub(pw(mi("x"), mn(3)), A.add(mn(3), mi("x"))),
+      respostes: trob,
+      revisio: rev,
+      hint: "x³ − 3x − 1 = 0. Prova el signe a [-2,-1], [-1,0] i [1,2]."
+    };
+  }
+});
+
+/* --- 4 · Límits laterals (4 apartats reals) ---------------------- */
+EX.push({
+  n: 4, tipus: "limit", títol: "Límits laterals",
+  aprens: "Quan hi ha 1/(x−a), 1/|x| o 1/x dins d'una exponencial, el comportament canvia totalment a cada costat del punt. " +
+    "Calcula SEMPRE els dos laterals i compara: si coincideixen el límit existeix, si no → dne.",
+  make: function (r) {
+    var sub = iint(r, 0, 3);
+    if (sub === 0) {           /* 4a (5x+2)/(x²−1) en x=1 */
+      return {
+        apartat: "(a)",
+        problema: "Calcula el límit de (5x+2)/(x²−1) en x = 1.",
+        enunciat: limEn(xto(1, null), frac(A.add(A.mul(mn(5), mi("x")), mn(2)), A.sub(pw(mi("x"), mn(2)), mn(1)))),
+        respostes: ["dne"],
+        revisio: [
+          "A x=1: numerador = 5·1+2 = 7 (≠0), denominador = 1−1 = 0. No és 0/0.",
+          "x²−1 = (x−1)(x+1). Per x→1⁺: x−1>0 i x+1>0 → denominador >0 → 7/(+0) = +∞.",
+          "Per x→1⁻: x−1<0 i x+1>0 → denominador <0 → 7/(−0) = −∞.",
+          "Els laterals són diferents → EL LÍMIT NO EXISTEIX. (Asíntota vertical de 1a espècie: salt.)"
+        ],
+        hint: "Factoritza x²−1 = (x−1)(x+1) i mira el signe del denominador a cada costat de 1."
+      };
+    }
+    if (sub === 1) {           /* 4b −3/(1+e^{1/(x−1)}) en x=1 */
+      return {
+        apartat: "(b)",
+        problema: "Calcula el límit de −3/(1 + e^{1/(x−1)}) en x = 1.",
+        enunciat: limEn(xto(1, null), frac(mn(-3), A.add(mn(1), A.exp(A.div(mn(1), A.sub(mi("x"), mn(1))))))),
+        respostes: ["dne"],
+        revisio: [
+          "El problema és l'exponencial e^{1/(x−1)}: 1/(x−1) és +∞ a la dreta i −∞ a l'esquerra.",
+          "Per x→1⁺: 1/(x−1)→+∞ → e^{+∞}→+∞ → −3/(1+∞) = 0.",
+          "Per x→1⁻: 1/(x−1)→−∞ → e^{−∞}→0 → −3/(1+0) = −3.",
+          "Laterals 0 i −3, diferents → EL LÍMIT NO EXISTEIX."
+        ],
+        hint: "Divideixi's: a cada costat de 1, 1/(x−1) té un comportament diferent."
+      };
+    }
+    if (sub === 2) {           /* 4c e^{1/|x|} en x=0 */
+      return {
+        apartat: "(c)",
+        problema: "Calcula el límit de e^{1/|x|} en x = 0.",
+        enunciat: limEn(xto(0, null), A.exp(A.div(mn(1), A.abs(mi("x"))))),
+        respostes: ["+inf"],
+        revisio: [
+          "El valor absolut PROTECTA: |x| > 0 sempre, i en els dos costats |x| → 0⁺.",
+          "Per x→0⁺: 1/|x| → +∞ → e^{+∞} = +∞.",
+          "Per x→0⁻: 1/|x| → +∞ (perquè |x| és positiu!) → e^{+∞} = +∞.",
+          "Els DOS laterals són +∞ i coincideixen → el límit EXISTEIX i val +∞."
+        ],
+        hint: "Aquesta vegada el |x| fa que els dos costats es comportin igual."
+      };
+    }
+    /* 4d 3^{1/x} en x=0 */
+    return {
+      apartat: "(d)",
+      problema: "Calcula el límit de 3^{1/x} en x = 0.",
+      enunciat: limEn(xto(0, null), pw(mn(3), frac(mn(1), mi("x")))),
+      respostes: ["dne"],
+      revisio: [
+        "Per x→0⁺: 1/x → +∞. Com que 3 > 1, 3^{(gran)} = +∞.",
+        "Per x→0⁻: 1/x → −∞. Amb base >1 i exponent →−∞, 3^{−∞} = 0.",
+        "Laterals +∞ i 0, diferents → EL LÍMIT NO EXISTEIX."
+      ],
+      hint: "Recorda: base a>1, exponent →+∞ dona +∞; exponent →−∞ dona 0."
+    };
+  }
+});
+
+/* --- 5 · Continuïtat (4 apartats reals) -------------------------- */
+EX.push({
+  n: 5, tipus: "continuidad", títol: "Estudi de la continuïtat",
+  aprens: "Les 3 condicions: (1) f està DEFINIDA a x₀, (2) el LÍMIT existeix (els dos laterals coincideixen), " +
+    "(3) el límit és IGUAL a f(x₀). Si (2) falla → salt; si falla (1) o (3) amb límit existent → evitable.",
+  make: function (r) {
+    var sub = iint(r, 0, 3);
+    if (sub === 0) {           /* 5a (x+1)/(3−√(x²+5)) */
+      var expr5a = A.div(A.add(mi("x"), mn(1)), A.sub(mn(3), A.sqrt(A.add(pw(mi("x"), mn(2)), mn(5)))));
+      return {
+        apartat: "(a)",
+        problema: "Estudia la continuïtat de f(x) = (x+1)/(3−√(x²+5)).",
+        enunciat: expr5a,
+        respostes: ["no"],
+        extra: "Domini: 3−√(x²+5)=0 ⇔ √(x²+5)=3 ⇔ x²+5=9 ⇔ x=±2. Per tant D(f)=ℝ\\{−2, 2}. " +
+          "És contínua a tota ℓ fora de ±2. A x=2: el denominador canvia de signe (perquè el radicand creix) " +
+          "→ x→2⁺ dona 3/(−0)=−∞ i x→2⁻ dona 3/(+0)=+∞ → salt infinit. A x=−2 el mateix, en sentit invers.",
+        revisio: [
+          "Domini: el denominador s'anulla quan x²+5=9 ⇔ x=±2. Fora d'això, quocient de contínues → contínua.",
+          "A x=2: numerador = 3 ≠ 0, denominador → 0 canviant de signe.",
+          "x→2⁺: √(x²+5)>3 → 3−√<0 → 3/(−0) = −∞.  x→2⁻: √<3 → 3−√>0 → 3/(+0) = +∞.",
+          "Laterals diferents → NO contínua a x=2 (salt infinit). Mateix a x=−2."
+        ],
+        hint: "Primer resol 3−√(x²+5)=0 per saber on està definida."
+      };
+    }
+    if (sub === 1) {           /* 5b 4−(x−3)² a [0,7]; 7x−61 a (7,8] */
+      /* 4−(x−3)² = −x²+6x−5  →  Poly.from és ASCENDENT: [-5, 6, -1] */
+      var p1b = Poly.from([-5, 6, -1]);
+      var p2b = Poly.lin(7, -61);
+      return {
+        apartat: "(b)",
+        problema: "Estudia la continuïtat de f(x) = { 4−(x−3)²  si 0 ≤ x ≤ 7 ;  7x−61  si 7 < x ≤ 8 }.",
+        enunciat: null,
+        trossosReals: [
+          { op: "<", a: 7, expr: p1b.toAST() },
+          { op: ">=", a: 7, expr: p2b.toAST() }
+        ],
+        at: 7,
+        respostes: ["si"],
+        revisio: [
+          "L'únic punt on cal mirar és la UNIÓ dels dos trossos: x = 7 (a 0 i a 8 només hi acaba la funció, no hi ha canvi de tros).",
+          "① f(7): el 7 pertany al PRIMER tros (0 ≤ x ≤ 7), així que f(7) = 4−(7−3)² = 4−16 = −12. La funció ESTÀ DEFINIDA. ✓",
+          "② Límit per l'esquerra (x→7⁻): el tros que governa és el primer, un polinomi → 4−(7−3)² = −12.",
+          "   Límit per la dreta (x→7⁺): governa el segon tros → 7·7−61 = 49−61 = −12.",
+          "③ Els dos laterals coincideixen (−12) i el límit és −12 = f(7). Les 3 condicions es compleixen.",
+          "CONCLUSIÓ: f és CONTINUA a x = 7, i com que cada tros és continuu al seu interior, f és contínua a tot [0, 8]. ∎",
+          "Comprovació automàtica (el botó de baix ho calcula): f(7) = " + p1b.eval(Q(7)).toDisplay() + " i 7·7−61 = " + p2b.eval(Q(7)).toDisplay() + "."
+        ],
+        hint: "El punt delicat és x = 7: hi has d'avaluar els dos trossos i comparar-los amb f(7)."
+      };
+    }
+    if (sub === 2) {           /* 5c (x+|x−2|)/x si x≠0; 1 si x=0 */
+      return {
+        apartat: "(c)",
+        problema: "Estudia la continuïtat de f(x) = { (x+|x−2|)/x  si x ≠ 0 ;  1  si x = 0 } en x = 0.",
+        enunciat: null,
+        respostes: ["no"],
+        extra: "Per x molt proper a 0 (|x|<2) es té |x−2| = 2−x, de manera que (x+|x−2|)/x = (x+2−x)/x = 2/x. " +
+          "A x→0⁺ → +∞ i a x→0⁻ → −∞: salt infinit. Per |x|>2 el |x−2|=x−2 i la funció val 2.",
+        revisio: [
+          "Condició 1: f(0)=1 → està definida. ✓",
+          "Condició 2: per x→0⁺ tenim |x−2| = 2−x (perquè x<2), així que f(x) = (x+2−x)/x = 2/x → +∞.",
+          "Per x→0⁻: |x−2| = 2−x igual → f(x) = 2/x → −∞.",
+          "Laterals +∞ i −∞ → el límit NO EXISTEIX → f NO és contínua a x=0 (salt infinit).",
+          "Per x > 2 o x < −2 el valor absolut canvia i f(x)=2, que és continu."
+        ],
+        hint: "Prop de 0, |x−2| = 2−x. Aleshores el numerador es simplifica a 2."
+      };
+    }
+    /* 5d x·sin(1/x) si x≠0; 0 si x=0 */
+    return {
+      apartat: "(d)",
+      problema: "Estudia la continuïtat de f(x) = { x·sen(1/x)  si x ≠ 0 ;  0  si x = 0 } en x = 0.",
+      enunciat: null,
+      respostes: ["si"],
+      extra: "Aquí NO es pot simplement substituting: sen(1/x) no té límit (oscila infinitament). " +
+        "El que salva la situació és l'ACOTAMENT: |sen(1/x)| ≤ 1, i per tant |x·sen(1/x)| ≤ |x| → 0. " +
+        "És el teorema de l'acotació aplicat al producte.",
+      revisio: [
+        "Condició 1: f(0) = 0 → definida. ✓",
+        "Condició 2: el límit. No podem usar els laterals de sen(1/x) (no n'hi ha).",
+        "TRAC: |x·sen(1/x)| = |x|·|sen(1/x)| ≤ |x|·1 = |x|  (perquè |sen u| ≤ 1 sempre).",
+        "Com que |x| → 0, tenim −|x| ≤ x·sen(1/x) ≤ |x| → per el teorema de l'acotació (squeeze) el límit és 0.",
+        "Condició 3: límit = 0 = f(0). → CONTINUA. ∎"
+      ],
+      hint: "Usa |sen u| ≤ 1: aleshores |x·sen(1/x)| ≤ |x| → 0. Aïllament (squeeze theorem)."
+    };
+  }
+});
+
+/* --- 6 · Paràmetre a en x=1 -------------------------------------- */
+EX.push({
+  n: 6, tipus: "parametro", títol: "Paràmetre a per continuïtat en x = 1",
+  aprens: "Perquè f sigui contínua al punt d'unió, han de coincidir el VALOR del primer tros i el LÍMIT del segon. " +
+    "Això dona una equació que determina el paràmetre. Comparem abans i després del punt.",
+  make: function (r) {
+    var c1 = iint(r, -3, 3), c2 = iint(r, -5, 5);
+    var troc2 = Poly.lin(-2, 7);
+    var aSol = troc2.eval(Q(1)) - (c1 + c2);   /* a·1 + c1 + c2 = −2+7 = 5 → a = 5 − c1 − c2 */
+    return {
+      problema: "Determina el valor de a perquè f(x) = { a·x² + " + c1 + "x + " + c2 + "  si x < 1 ;  −2x + 7  si x ≥ 1 } " +
+        "sigui contínua en x = 1.",
+      enunciat: null,
+      respostes: [aSol.toString()],
+      revisio: [
+        "Continuïtat a x=1 vol dir: límit per l'esquerra = límit per la dreta = f(1).",
+        "Límit per l'esquerra (polinomi, continuous): a·1 + " + c1 + " + " + c2 + " = a + " + (c1 + c2) + ".",
+        "f(1): el punt x=1 pertany al SEGON tros (x ≥ 1), així que f(1) = −2·1 + 7 = 5.",
+        "Igualem: a + " + (c1 + c2) + " = 5 → a = " + aSol + ".",
+        "Comprovació: a=" + aSol + " fa que el primer tros valgui " + aSol + "+" + (c1 + c2) + " = 5 = f(1). ∎"
+      ],
+      hint: "Iguala el valor del primer tros avaluat a 1 amb −2·1+7 = 5."
+    };
+  }
+});
+
+/* --- 7 · Paràmetre a amb logaritme ------------------------------- */
+EX.push({
+  n: 7, tipus: "parametro", títol: "Paràmetre a amb logaritme",
+  aprens: "Idèntica tècnica a l'exercici 6. L'única novetat és que un dels trossos és un logaritme: " +
+    "recorda que ln és continu només on el seu argument és > 0.",
+  make: function (r) {
+    var k = iint(r, 1, 4);
+    /* f(x) = a + k x²  (x ≤ 0) ;  ln(x + e)  (x > 0)  →  a + k·0 = ln(e) = 1  → a = 1 */
+    var sol = 1;
+    return {
+      problema: "Troba el valor de a perquè f(x) = { a + " + k + "x²  si x ≤ 0 ;  ln(x + e)  si x > 0 } " +
+        "sigui una funció contínua.",
+      enunciat: null,
+      respostes: [1],
+      revisio: [
+        "Domini del logaritme: x + e > 0 ⇔ x > −e. A prop de 0 es compleix, no hi ha problema de domini.",
+        "Límit per l'esquerra (x→0⁻): a + " + k + "·x² → a + 0 = a.",
+        "f(0): el punt 0 pertany al PRIMER tros (x ≤ 0), per tant f(0) = a + 0 = a.",
+        "Límit per la dreta (x→0⁺): ln(x + e) → ln(0 + e) = ln e = 1.",
+        "Igualem: a = 1. Aleshores les tres condicions es compleixen → CONTINUA. ∎"
+      ],
+      hint: "Iguala el límit del polinomi (a) amb ln(0+e) = ln(e) = 1."
+    };
+  }
+});
+
+/* --- 8 · Tres paràmetres, 4 trossos ------------------------------ */
+EX.push({
+  n: 8, tipus: "parametro", títol: "Paràmetres a, b, c amb 4 trossos",
+  aprens: "Amb molts trossos apliques la continuïtat a CADA punt d'unió per separat. Cada unions imposa " +
+    "una equació. Amb 4 trossos i 3 desconegudes hi ha 3 condicions per 3 incògnites: sistema compatible.",
+  make: function (r) {
+    /* −(1/2)x + 2/5  (x≤−1);  a x + 3  (−1<x≤2);  −x + b  (2<x≤5);  c  (x>5) */
+    /* Resolvem el SISTEMA: 3 unintoncions, 3 incògnites. Els valors no són
+       lliures: els fixa la continuitat, i aquí els calculem exactament. */
+    var A2 = Q(9, 10);                       /* tros 1 a x=−1: −(1/2)(−1)+2/5 = 1/2+2/5 = 9/10 */
+    var aSol = Q(3).sub(A2);                 /* 9/10 = −a + 3  →  a = 3 − 9/10 = 21/10 */
+    var bSol = aSol.mul(Q(2)).add(Q(5));     /* 2a + 3 = −2 + b  →  b = 2a + 5 = 46/5 */
+    var cSol = bSol.sub(Q(5));               /* c = −5 + b = 21/5 */
+    /* Variació del enunciat: canviem el pendent del primer tros perquè
+       l'alumne no pugui copiar la resposta, i tornem a resoldre. */
+    var k = iint(r, 2, 4);
+    var p1v = Q(k, 2).neg();                 /* −(k/2)x + 2/5 */
+    var A2b = p1v.mul(Q(-1)).add(Q(2, 5));   /* valor a x=−1 */
+    var a2 = Q(3).sub(A2b);
+    var b2 = a2.mul(Q(2)).add(Q(5));
+    var c2 = b2.sub(Q(5));
+    return {
+      problema: "Per a quins valors de a, b i c és contínua la funció\n" +
+        "  f(x) = { −(" + k + "/2)x + 2/5   si x ≤ −1\n" +
+        "        { a·x + 3              si −1 < x ≤ 2\n" +
+        "        { −x + b               si 2 < x ≤ 5\n" +
+        "        { c                    si x > 5",
+      enunciat: null,
+      respostes: [a2.toDisplay() + ", " + b2.toDisplay() + ", " + c2.toDisplay()],
+      revisio: [
+        "Hi ha 3 punts d'unió: x = −1, x = 2 i x = 5. A cadascun imposem que els dos trossos coincideixin.",
+        "① x = −1:  valor del tros 1 = −(" + k + "/2)(−1) + 2/5 = " + k + "/2 + 2/5 = " + A2b.toDisplay() +
+          ".  Valor del tros 2 = a(−1) + 3 = −a + 3.",
+        "   " + A2b.toDisplay() + " = −a + 3  →  a = 3 − " + A2b.toDisplay() + " = " + a2.toDisplay() + ".",
+        "② x = 2:  valor del tros 2 = 2a + 3 = " + a2.mul(Q(2)).add(Q(3)).toDisplay() +
+          ".  Valor del tros 3 = −2 + b.  →  b = 2a + 5 = " + b2.toDisplay() + ".",
+        "③ x = 5:  valor del tros 3 = −5 + b = " + c2.toDisplay() + ".  Valor del tros 4 = c.  →  c = " + c2.toDisplay() + ".",
+        "RESPOSTA: a = " + a2.toDisplay() + ",  b = " + b2.toDisplay() + ",  c = " + c2.toDisplay() + ".",
+        "Comprovació: −a+3 = " + a2.mul(Q(-1)).add(Q(3)).toDisplay() + " = " + A2b.toDisplay() + " ✓  |  " +
+          "2a+3 = " + a2.mul(Q(2)).add(Q(3)).toDisplay() + " = −2+b ✓  |  −5+b = " + c2.toDisplay() + " = c ✓"
+      ],
+      hint: "Tres unions (−1, 2, 5) → tres equacions. Trosseja: primer resol a, després b, després c."
+    };
+  }
+});
+
+/* --- 9 · Bateria de 16 apartats ---------------------------------- */
+EX.push({
+  n: 9, tipus: "limit", títol: "Càlcul de límits (16 apartats)",
+  aprens: "Tots els subtipus del temari en un sol exercici. El procediment sempre és el mateix: " +
+    "(1) substitueix i mira què surt, (2) identifica la indeterminació, (3) aplica la tècnica corresponent.",
+  make: function (r) {
+    var t = iint(r, 0, 15);
+    /* --- (a) 0/0 factor notable → 6 --- */
+    if (t === 0) return {
+      apartat: "(a)", problema: "lim (x→3) (x²−9)/(x−3).",
+      enunciat: limEn(xto(3, null), frac(A.sub(pw(mi("x"), mn(2)), mn(9)), A.sub(mi("x"), mn(3)))),
+      respostes: [6],
+      revisio: ["Substituïm: (9−9)/(3−3) = 0/0 → INDETERMINACIÓ.",
+        "Identitat notable: x²−9 = (x−3)(x+3).", "Cancel·lem (x−3) (només val 0 al punt, i al límit no importa).",
+        "Queda x+3; en x=3 → 6."],
+      hint: "x²−9 = (x−3)(x+3)."
+    };
+    /* --- (b) Ruffini --- */
+    if (t === 1) {
+      /* Llista1 9(b): 2x³−14x²+12x  sobre  x³−10x²+27x−18 , en x→1 */
+      var nb = Poly.from([0, 12, -14, 2]), db = Poly.from([-18, 27, -10, 1]);
+      var rb = L.limit.atPoint({ num: nb, den: db, at: Q(1), side: null });
+      return {
+        apartat: "(b)", problema: "lim (x→1) (2x³−14x²+12x)/(x³−10x²+27x−18).",
+        enunciat: limEn(xto(1, null), ratioAST(nb, db)),
+        respostes: [rb.kind === "finite" ? rb.value.toNumber() : 0],
+        revisio: [
+          "0/0 a la substitució: 2−14+12 = 0 i 1−10+27−18 = 0.",
+          "Ruffini al NUMERADOR amb (x−1):  2x³−14x²+12x = 2x(x²−7x+6) = 2x(x−1)(x−6).",
+          "Al DENOMINADOR:  x³−10x²+27x−18 = (x−1)(x²−9x+18) = (x−1)(x−3)(x−6).",
+          "Cancel·lem (x−1) i (x−6):  2x/(x−3).",
+          "En x=1:  2·1/(1−3) = 2/(−2) = −1."
+        ],
+        hint: "Ruffini amb (x−1) als dos polinomis. Ojo: 2x³−14x²+12x = 2x(x−1)(x−6)."
+      };
+    }
+    /* --- (c) variable h --- */
+    if (t === 2) {
+      var xc = iint(r, 1, 5);
+      return {
+        apartat: "(c)", problema: "lim (h→0) [(x+h)² − x²]/h, amb x fix. Calcula'l en x = " + xc + ".",
+        enunciat: limEn(xto(0, null), frac(A.sub(pw(A.add(mi("x"), mi("h")), mn(2)), pw(mi("x"), mn(2))), mi("h"))),
+        respostes: [2 * xc],
+        revisio: ["Aquí la variable del límit és h, no x! (definició de derivada).",
+          "Desenvolupem: (x² + 2xh + h² − x²)/h = (2xh + h²)/h = 2x + h.",
+          "Quan h → 0: el terme h → 0 i queda 2x.",
+          "En x = " + xc + ": el resultat és 2·" + xc + " = " + (2 * xc) + "."],
+        hint: "Desenvoluge el quadrat i divideix per h. Queda 2x + h."
+      };
+    }
+    /* --- (d) conjugat en un punt --- */
+    if (t === 3) {
+      var k3 = iint(r, 1, 9);
+      var sq = k3 * k3;
+      return {
+        apartat: "(d)", problema: "lim (x→" + sq + ") (√x − √" + sq + ")/(x − " + sq + ").",
+        enunciat: limEn(xto(sq, null), frac(A.sub(A.sqrt(mi("x")), A.sqrt(mn(sq))), A.sub(mi("x"), mn(sq)))),
+        respostes: [f2(1 / (2 * Math.sqrt(sq)))],
+        revisio: ["0/0: √" + sq + " − √" + sq + " = 0.",
+          "Racionalitzem multiplicant i dividint pel conjugat √x + √" + sq + ":",
+          "(√x − √" + sq + ")(√x + √" + sq + ") = x − " + sq + ".",
+          "El límit = 1/(√x + √" + sq + ") avaluat a x=" + sq + " = 1/(2√" + sq + ") = 1/(2·" + k3 + ") = 1/" + (2 * k3) + "."],
+        hint: "Conjugat: multiplica per (√x + √" + sq + ")."
+      };
+    }
+    /* --- (e) variable h amb radical --- */
+    if (t === 4) {
+      var xe = pickSq(r);
+      var res = f2(1 / (2 * Math.sqrt(xe)));
+      return {
+        apartat: "(e)", problema: "lim (h→0) [√(" + xe + "+h) − √" + xe + "]/h.  (és 1/(2√" + xe + "))",
+        enunciat: limEn(xto(0, null), frac(A.sub(A.sqrt(A.add(mn(xe), mi("h"))), A.sqrt(mn(xe))), mi("h"))),
+        respostes: [res],
+        revisio: ["0/0 a h→0.", "Conjugat: (√(" + xe + "+h) − √" + xe + ")(√(" + xe + "+h) + √" + xe + ") = h.",
+          "El límit és 1/(√(" + xe + "+h) + √" + xe + ") → 1/(2√" + xe + ") = " + res + "."],
+        hint: "Conjugat, igual que el apartado (d)."
+      };
+    }
+    /* --- (f) lateral amb exponencial --- */
+    if (t === 5) return {
+      apartat: "(f)", problema: "lim (x→0) 1/(2 + e^{1/x}).",
+      enunciat: limEn(xto(0, null), frac(mn(1), A.add(mn(2), A.exp(A.div(mn(1), mi("x")))))),
+      respostes: ["dne"],
+      revisio: ["x→0⁺: 1/x→+∞ → e^{+∞}→∞ → 1/(2+∞) = 0.",
+        "x→0⁻: 1/x→−∞ → e^{−∞}→0 → 1/(2+0) = 1/2.",
+        "Laterals 0 i 1/2 → NO EXISTEIX."],
+      hint: "e^{1/x} canvia completament de comportament a cada costat de 0."
+    };
+    /* --- (g) a^∞ en un punt --- */
+    if (t === 6) {
+      var gg = iint(r, 2, 5);
+      return {
+        apartat: "(g)", problema: "lim (x→1) (x⁴−3x³+4)^{1/(x−1)⁴}.",
+        enunciat: limEn(xto(1, null), pw(A.sub(pw(mi("x"), mn(4)), A.mul(mn(3), pw(mi("x"), mn(3))), mn(4)), frac(mn(1), pw(A.sub(mi("x"), mn(1)), mn(4))))),
+        respostes: ["+inf"],
+        revisio: ["A x=1: base = 1−3+4 = 2 i exponent = 1/0 → +∞.",
+          "Aquí NO hi ha indeterminació 1^∞: la base tendeix a 2 (>1), no a 1.",
+          "Base >1 i exponent →+∞ → 2^{+∞} = +∞. El límit existeix i val +∞."],
+        hint: "No confonguis: la base és 2, no 1. Amb base>1 i exponent→∞, el resultat és +∞."
+      };
+    }
+    /* --- (h) 1^∞ BILATERAL en un punt: NO existeix --- */
+    if (t === 7) return {
+      apartat: "(h)", problema: "lim (x→1) (3x⁵−2)^{1/(x−1)²}.  (Atenció: el límite NO existeix)",
+      enunciat: limEn(xto(1, null), pw(A.sub(A.mul(mn(3), pw(mi("x"), mn(5))), mn(2)), frac(mn(1), pw(A.sub(mi("x"), mn(1)), mn(2))))),
+      respostes: ["dne"],
+      revisio: [
+        "A x=1 la base és 3−2 = 1 i l'exponent 1/(x−1)² és SEMPRE positiu i tendeix a +∞: sembla 1^∞. Però cal mirar els DOS laterals.",
+        "PASSEJ 1 — l'exponent: 1/(x−1)² → +∞ pels DOS costats (el quadrat sempre és ≥ 0). No hi ha diferència aquí.",
+        "PASSEJ 2 — la BASE canvia de signe respecte de 1: posant u = x−1, 3x⁵−2 = 3(1+u)⁵−2 ≈ 1 + 15u.",
+        "  · Per x→1⁺ (u>0): base > 1, és a dir base = 1 + (una mica). Llavors (1+ε)^{1/u²} amb ε ≈ 15u: surt +∞.",
+        "  · Per x→1⁻ (u<0): base < 1, és a dir base = 1 − (una mica). Llavors (1−ε)^{1/u²}: surt 0.",
+        "PASSEJ 3 — amb la fórmula de la e:  L = lim g(x)·(f(x)−1) = lim (1/u²)·(15u) = lim 15/u.",
+        "  A la dreta 15/u → +∞ → e^{+∞} = +∞.  A l'esquerra 15/u → −∞ → e^{−∞} = 0.",
+        "CONCLUSIÓ: per la dreta +∞ i per l'esquerra 0. Són diferents → EL LÍMIT NO EXISTEIX.",
+        "⚠ L'enunciat demana el límit BILATERAL. Si demanés només x→1⁺, la resposta seria +∞."
+      ],
+      hint: "L'exponent 1/(x−1)² és +∞ als dos costats, però la BASE és >1 a la dreta i <1 a l'esquerra. Calcula els dos laterals."
+    };
+    /* --- (i) grau num > den --- */
+    if (t === 8) {
+      var ni = Poly.from([0, 0, -5, -1, 0, 2]), di = Poly.from([-7, 3, 2]);
+      var ri = L.limit.infinity({ num: ni, den: di, sign: "+" });
+      return {
+        apartat: "(i)", problema: "lim (x→+∞) (2x⁵−x³−5x²)/(2x²+3x−7).",
+        enunciat: limEn(xinf("+"), ratioAST(ni, di)),
+        respostes: [ri.kind === "inf" ? (ri.sign > 0 ? "+inf" : "-inf") : 0],
+        revisio: ["Els dos polinomis → +∞: indeterminació ∞/∞.",
+          "Grau del numerador 5, grau del denominador 2. El numerator CREIX més ràpid.",
+          "Dividim per x⁵: (2 − 1/x² − 5/x³)/(2/x⁵ + 3/x⁴ − 7/x⁵) → 2/0⁺ = +∞.",
+          "El coeficient principal del numerador és 2 > 0 → +∞."],
+        hint: "Divideix per x⁵ i mira què queda al denominador."
+      };
+    }
+    /* --- (j) grau num < den --- */
+    if (t === 9) {
+      var nj = Poly.from([5, -3, 2]), dj = Poly.from([-4, 2, 0, 3]);
+      return {
+        apartat: "(j)", problema: "lim (x→+∞) (2x²−3x+5)/(3x³+2x−4).",
+        enunciat: limEn(xinf("+"), ratioAST(nj, dj)),
+        respostes: [0],
+        revisio: ["∞/∞.", "Grau num 2 < grau den 3: el denominador creix més ràpid.",
+          "Dividim per x³: (2/x − 3/x² + 5/x³)/(3 + 2/x² − 4/x³) → 0/3 = 0."],
+        hint: "Divideix pel grau MAIOR (x³)."
+      };
+    }
+    /* --- (k) mateixos graus --- */
+    if (t === 10) {
+      var nk = Poly.from([-3, -7, -5]), dk = Poly.from([-6, 5, 3]);
+      var rk = L.limit.infinity({ num: nk, den: dk, sign: "+" });
+      return {
+        apartat: "(k)", problema: "lim (x→+∞) (−5x²−7x−3)/(3x²+5x−6).",
+        enunciat: limEn(xinf("+"), ratioAST(nk, dk)),
+        respostes: [rk.kind === "finite" ? rk.value.toNumber() : 0],
+        revisio: ["∞/∞ amb graus iguals (2 i 2).", "Dividim per x²: (−5 − 7/x − 3/x²)/(3 + 5/x − 6/x²) → −5/3.",
+          "El resultat és −5/3 (≈ −1,6667), independent del signe de l'infinit."],
+        hint: "Divideix per x²: només queden els coeficients principals."
+      };
+    }
+    /* --- (l) ∞−∞ obliqua en −∞ :  √(x² − c·x) + x  →  +c/2 --- */
+    if (t === 11) {
+      var c3 = iint(r, 1, 6);
+      return {
+        apartat: "(l)", problema: "lim (x→−∞) (√(x² − " + c3 + "x) + x).",
+        enunciat: limEn(xinf("-"), A.add(A.sqrt(A.sub(pw(mi("x"), mn(2)), A.mul(mn(c3), mi("x")))), mi("x"))),
+        respostes: [c3 / 2],
+        revisio: [
+          "PASSEJ 1 — el truc d'aquest exercici: en −∞ tenim |x| = −x (NO x).",
+          "PASSEJ 2 — factoritzem x² dins del radical:",
+          "  √(x² − " + c3 + "x) = √(x²(1 − " + c3 + "/x)) = √(x²)·√(1 − " + c3 + "/x) = |x|·√(1 − " + c3 + "/x) = −x·√(1 − " + c3 + "/x).",
+          "PASSEJ 3 — substituïm i agrupem els dos termes amb factor x:",
+          "  [ −x·√(1 − " + c3 + "/x) ] + x  =  x·[ 1 − √(1 − " + c3 + "/x) ].",
+          "PASSEJ 4 — racionalitzem el que hi ha entre claudors:",
+          "  1 − √(1 − " + c3 + "/x)  =  [ 1 − (1 − " + c3 + "/x) ] / [ 1 + √(1 − " + c3 + "/x) ]  =  (" + c3 + "/x) / [ 1 + √(1 − " + c3 + "/x) ].",
+          "  Multiplicant per x:  x·(...)  =  " + c3 + " / [ 1 + √(1 − " + c3 + "/x) ].",
+          "PASSEJ 5 — en x → −∞,  " + c3 + "/x → 0,  de manera que √(1 − " + c3 + "/x) → √1 = 1 i el denominador → 1 + 1 = 2.",
+          "  LÍMIT = " + c3 + " / 2 = " + (c3 / 2) + ".  (positiu: el x < 0 i el factor entre claudors és < 0, el producte és > 0)"
+        ],
+        hint: "Surt |x| de la arrel i en −∞, |x| = −x. Després racionalitza i el denominador tendirà a 2."
+      };
+    }
+    /* --- (m) ∞−∞ arrels mateix grau --- */
+    if (t === 12) return {
+      apartat: "(m)", problema: "lim (x→+∞) (√(x+1) − √x).",
+      enunciat: limEn(xinf("+"), A.sub(A.sqrt(A.add(mi("x"), mn(1))), A.sqrt(mi("x")))),
+      respostes: [0],
+      revisio: ["∞ − ∞.", "Conjugat: (√(x+1) − √x) = [(x+1) − x]/[√(x+1) + √x] = 1/[√(x+1) + √x].",
+        "El denominador → +∞, i un nombre finit dividit per infinit → 0."],
+      hint: "Conjugat: el numerador es converteix en 1."
+    };
+    /* --- (n) ∞−∞ arrels graus diferents --- */
+    if (t === 13) {
+      var cn = iint(r, 2, 5);
+      return {
+        apartat: "(n)", problema: "lim (x→+∞) (√(x² + 2x) − √(" + cn + "x)).",
+        enunciat: limEn(xinf("+"), A.sub(A.sqrt(A.add(pw(mi("x"), mn(2)), A.mul(mn(2), mi("x")))), A.sqrt(A.mul(mn(cn), mi("x"))))),
+        respostes: ["+inf"],
+        revisio: ["Els dos radicals → +∞: ∞ − ∞.",
+          "x² domina x, per tant √(x²+2x) ~ x (creix com un lineal). Però √(" + cn + "x) ~ √" + cn + "·√x, que creix més lentament.",
+          "El que hi ha a l'esquerra creix MÉS RÀPID, i el resultat és un nombre → el límit és +∞.",
+          "Conjugat: [(x²+2x) − " + cn + "x]/[√(x²+2x) + √(" + cn + "x)] = x² + (2−" + cn + ")x] / [..] ~ x²/x = x → +∞."],
+        hint: "Compara les taxes: x (grau 1) vs √x (grau 1/2). Manda el terme de grau major."
+      };
+    }
+    /* --- (o) paràmetre lliure dins del radicand --- */
+    if (t === 14) {
+      var co = iint(r, 1, 3);
+      return {
+        apartat: "(o)", problema: "lim (x→+∞) [x² − √(x³ + a)·√(x + b)]. Calcula'l per a = " + co + ", b = 1.",
+        enunciat: limEn(xinf("+"), A.sub(pw(mi("x"), mn(2)), A.mul(A.sqrt(A.add(pw(mi("x"), mn(3)), mn(co))), A.sqrt(A.add(mi("x"), mn(1)))))),
+        respostes: ["-inf"],
+        revisio: ["x² → +∞. El product √(x³+a)·√(x+b) = √((x³+a)(x+b)) ~ √(x⁴) = x².",
+          "Els dos termes són de grau 2, així que hi ha ∞ − ∞ CAL APROXIMAR (no podem mirar només el grau dominant).",
+          "Conjugat: √((x³+a)(x+b)) = √(x⁴ + b x³ + a x + ab) = x²·√(1 + b/x + a/x³ + ab/x⁴).",
+          "Amb b=1: 1/x és dominant, i √(1+1/x) ≈ 1 + 1/(2x). Per tant x² − x²(1 + 1/(2x)) ≈ −x²/(2x) = −x/2 → −∞."],
+        hint: "Els dos termes són de grau 2: cal racionalitzar i mirar l'ordre següent."
+      };
+    }
+    /* --- (p) quocient de logaritmes --- */
+    return {
+      apartat: "(p)", problema: "lim (x→+∞) ln(4x²+5x+7)/ln(x+3).",
+      enunciat: limEn(xinf("+"), frac(A.ln(A.add(A.add(A.mul(mn(4), pw(mi("x"), mn(2))), A.mul(mn(5), mi("x"))), mn(7))), A.ln(A.add(mi("x"), mn(3))))),
+      respostes: [2],
+      revisio: ["Els dos logaritmes tenen arguments → +∞: indeterminació ∞/∞.",
+        "A dalt el terme dominant és 4x² (grau 2); avall és x+3 (grau 1).",
+        "ln(4x²+5x+7) = ln(x²(4 + 5/x + 7/x²)) = 2·ln(x) + ln(4+…) ≈ 2·ln(x).",
+        "ln(x+3) ≈ ln(x). El quocient → 2·ln(x)/ln(x) = 2."],
+      hint: "ln(a·x^b) ≈ b·ln(x). El límit és el quocient dels graus: 2/1 = 2."
+    };
+  }
+});
+function pickSq(r) { var q = r.int(1, 6); return q * q; }
+
+/* --- 10 · Límit amb paràmetre i lateral x→a⁺ -------------------- */
+EX.push({
+  n: 10, tipus: "parametro", títol: "Límit amb paràmetre i lateral x → a⁺",
+  aprens: "Aquí el PUNT on es calcula el límit és el mateix paràmetre que apareix a la funció. " +
+    "Per això cal fer un ESTUDI PER CASOS: separa a = 0 de a ≠ 0.",
+  make: function (r) {
+    return {
+      problema: "Troba el valor de lim (x→a⁺) (x² − (1−a)x − a)/(x² − a²) segons el valor de a.",
+      enunciat: mkn("math", { display: "inline" }, [
+        mkn("munder", null, [mo("lim"), mkn("mrow", null, [mi("x"), mo("→"), mi("a"), mkn("msup", null, [mn(""), mo("+")])])]),
+        mo(" "),
+        mkn("mfrac", null, [
+          mkn("mrow", null, [pw(mi("x"), mn(2)), mo("−"), mkn("mrow", null, [mo("("), mn("1"), mo("−"), mi("a"), mo(")"), mi("x")]), mo("−"), mi("a")]),
+          mkn("mrow", null, [pw(mi("x"), mn(2)), mo("−"), pw(mi("a"), mn(2))])
+        ]),
+        mo("="), mtxt("?")
+      ]),
+      /* la resposta és una FUNCIO de a; es pot escriure amb notació de casos */
+      respostes: ["1; +inf; -inf", "+inf si a>1; 1 si a=1; -inf si a<1 i a!=0"],
+      exSample: {
+        problema: "Ara fixa un valor concret de a i calcula el límit. Agafa a = 1.",
+        enunciat: null,
+        respostes: [1],
+        revisio: [
+          "Amb a = 1:  numerador = x² − (1−1)x − 1 = x² − 1  i  denominador = x² − 1.",
+          "Són EXACTAMENT el mateix polinomi, de manera que el cocient és 1 per a tots x ≠ ±1.",
+          "El límit (també per la dreta) és 1."
+        ],
+        hint: "Si a = 1, el numerador i el denominador són iguals."
+      },
+      revisio: [
+        "PASSEJ 1 — factoritzem. El numerador: x² − (1−a)x − a. Busquem un factor (x − 1):",
+        "  x² − (1−a)x − a = (x − 1)(x + a)   [comprova: x² + a x − x − a = x² + (a−1)x − a = x² − (1−a)x − a ✓].",
+        "El denominador: x² − a² = (x − a)(x + a).",
+        "PASSEJ 2 — CAS a ≠ 0. Podem cancel·lar (x + a) perquè x + a → 2a ≠ 0:",
+        "  el límit = lim (x−1)/(x−a) en x→a⁺. El numerador val a − 1 i el denominador → 0⁺.",
+        "  Si a > 1: (a−1)/0⁺ = +∞.   Si a < 1: (a−1)/0⁺ = −∞.   El cas a = 1 s'ha de tractar a part:",
+        "PASSEJ 3 — CAS a = 1. Aleshores x² − (1−1)x − 1 = x² − 1 i x² − 1 = (x−1)(x+1), i el denominador és x² − 1.",
+        "  El cocient és exactament 1 per a tots x ≠ ±1, així que el límit és 1 (per la dreta i per l'esquerra).",
+        "RESUM:  a = 1 → 1 ;  a > 1 → +∞ ;  a < 1 i a ≠ 0 → −∞.  (I a = 0: x²−x = x(x−1) sobre x² = 0/0; per x→0⁺ és (x−1)/x → −∞.)"
+      ],
+      hint: "Factoritza: (x−1)(x+a) / [(x−a)(x+a)]. Després separa el cas a = 0 i el cas a ≠ 0."
+    };
+  }
+});
+
+/* --- 11 · Recta tangent ------------------------------------------ */
+EX.push({
+  n: 11, tipus: "tangente", títol: "Recta tangent en x = 2",
+  aprens: "La tangent a f en el punt d'abscissa a és y = f(a) + f'(a)·(x − a). " +
+    "Per a un COCIENTE s'ha de derivar amb la regla del quocient: f' = (f'·g − f·g')/g².",
+  make: function (r) {
+    var num = Poly.from([0, 1]), den = Poly.from([1, 0, 1]);
+    var tg = L1.tangent(num, den, 2);
+    return {
+      problema: "Sigui f(x) = x/(x²+1). Escriu l'equació de la recta tangent al gràfic en el punt d'abscissa x = 2.",
+      enunciat: null,
+      respostes: ["y = 2/5 - (3/25)(x-2)", "y = -3x/25 + 16/25", "-3/25"],
+      revisio: [
+        "PASSEJ 1 — punt de tangència: f(2) = 2/(4+1) = 2/5.",
+        "PASSEJ 2 — pendent = derivada. Regla del quocient amb N(x)=x i D(x)=x²+1:",
+        "  f'(x) = [1·(x²+1) − x·2x]/(x²+1)² = (x² + 1 − 2x²)/(x²+1)² = (1 − x²)/(x²+1)².",
+        "  f'(2) = (1 − 4)/(4+1)² = −3/25.",
+        "PASSEJ 3 — equació: y = f(2) + f'(2)(x − 2) = 2/5 + (−3/25)(x − 2) = 2/5 − (3/25)(x − 2).",
+        "  Ampliada: y = −(3/25)x + 6/25 + 10/25 = −(3/25)x + 16/25.",
+        "Comprovació: a x=2 la recta val −6/25 + 16/25 = 10/25 = 2/5 = f(2) ✓."
+      ],
+      hint: "f' = (1 − x²)/(x²+1)². Després substitueix x=2 a tots dos llocs."
+    };
+  }
+});
+
+/* --- 12 · Tangent que passa per un punt exterior ----------------- */
+EX.push({
+  n: 12, tipus: "tangente", títol: "Punts on la tangent passa per (2, 6)",
+  aprens: "La tangent a f en t passa pel punt (px, py) si i només si f(t) + f'(t)·(px − t) = py. " +
+    "Aquesta és una EQUACIÓ en t (aquí, una quadràtica). Cada arrel és un punt buscat.",
+  make: function (r) {
+    var p = Poly.from([1, -2, 3]);
+    var tg = L1.tangentsPer(p, 2, 6);
+    return {
+      problema: "Troba els punts de la corba f(x) = 3x²−2x+1 els quals la recta tangent a ells passa pel punt (2, 6) " +
+        "(exterior a la corba).",
+      enunciat: null,
+      respostes: [tg.raices.map(function (z) { return z.toDisplay(); }).join(", ")],
+      revisio: [
+        "PASSEJ 1 — derivada: f'(x) = 6x − 2.",
+        "PASSEJ 2 — condició. La tangent a f en t és y = f(t) + f'(t)(x − t). Volem que passi per (2, 6):",
+        "  6 = f(t) + f'(t)·(2 − t) = 3t² − 2t + 1 + (6t − 2)(2 − t).",
+        "PASSEJ 3 — resol. Desenvolupem (6t−2)(2−t) = 12t − 4 − 6t² + 2t = −6t² + 14t − 4.",
+        "  6 = 3t² − 2t + 1 − 6t² + 14t − 4 = −3t² + 12t − 3.",
+        "  −3t² + 12t − 9 = 0 ⇔ t² − 4t + 3 = 0 ⇔ (t − 1)(t − 3) = 0 → t = 1 i t = 3.",
+        "PASSEJ 4 — els punts: f(1) = 3 − 2 + 1 = 2 → (1, 2) i f(3) = 27 − 6 + 1 = 22 → (3, 22).",
+        "Comprovació de la tangent a (1,2): pendent f'(1) = 4 → y − 2 = 4(x − 1) → a x=2 dona y = 6 ✓."
+      ],
+      hint: "Iguala f(t) + f'(t)(2 − t) = 6 i resol la quadràtica."
+    };
+  }
+});
+
+/* ---------------------------------------------------------------- */
+/* 9. Render i interacció                                            */
+/* ---------------------------------------------------------------- */
+var view = document.getElementById("l1view");
+var prog = {};
+try { prog = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { prog = {}; }
+function saveProg() { try { localStorage.setItem(KEY, JSON.stringify(prog)); } catch (e) {} }
+function updateProgress() {
+  var f = EX.filter(function (b) { return prog[b.n]; }).length;
+  document.getElementById("l1prog").textContent = f + "/" + EX.length;
+}
+
+function showHome() {
+  view.innerHTML = "";
+  var head = el("div", "screen-head");
+  head.appendChild(el("h1", "screen-title", "Llista 1 de Càlcul"));
+  head.appendChild(el("p", "screen-sub",
+    "12 exercicis, 32 apartats. Per a cada un: què aprens, un exemple resolt pas a pas i una variant " +
+    "per practicar. Tot és a part: no toca el joc principal ni el seu progrés."));
+  view.appendChild(head);
+  var grid = el("div", "levels");
+  EX.forEach(function (b) {
+    var c = el("button", "level" + (prog[b.n] ? " passed" : ""));
+    c.appendChild(el("div", "level-top", [
+      el("span", "level-n", String(b.n)),
+      el("span", "level-name", b.titol)
+    ]));
+    var meta = el("div", "level-meta");
+    meta.appendChild(el("span", "chip chip-mute", prog[b.n] ? "✓ fet" : "per fer"));
+    meta.appendChild(el("span", "chip chip-mute", b.tipus));
+    c.appendChild(meta);
+    c.addEventListener("click", function () { showEx(b.n); });
+    grid.appendChild(c);
+  });
+  view.appendChild(grid);
+  view.appendChild(el("div", "card", "Mides: escriu el resultat (6, −5/3, 3/2, dne, +inf, 1,5 …). " +
+    "Si l'exercici té més d'una resposta separated per comes, escriu-les totes."));
+  updateProgress();
+}
+
+function showEx(n) {
+  view.innerHTML = "";
+  var b = EX.filter(function (x) { return x.n === n; })[0];
+  if (!b) { showHome(); return; }
+
+  var c = card();
+  c.appendChild(btn("btn btn-sm btn-ghost", "← Torna a la llista", showHome));
+  var h = el("h2", "", "Exercici " + b.n + ": " + b.titol);
+  h.style.fontSize = "1.05rem";
+  c.appendChild(h);
+  var box = el("div", "callout");
+  box.appendChild(el("b", "", "Què aprens: "));
+  box.appendChild(el("span", "", b.aprens));
+  c.appendChild(box);
+  view.appendChild(c);
+
+  var pr = card();
+  var row = el("div", "row row-wrap");
+  var seed = document.createElement("input");
+  seed.className = "field mono"; seed.style.maxWidth = "110px";
+  seed.value = String(Math.floor(Math.random() * 100000));
+  seed.title = "Llavor: mateixa llavor = mateix problema";
+  row.appendChild(el("span", "small", "Variant (llavor):"));
+  row.appendChild(seed);
+  row.appendChild(btn("btn btn-sm", "Torna a tirar", function () {
+    seed.value = String(Math.floor(Math.random() * 100000));
+    renderVariant();
+  }));
+  pr.appendChild(row);
+  var out = el("div"); out.style.marginTop = "10px";
+  pr.appendChild(out);
+  view.appendChild(pr);
+
+  function renderVariant() {
+    out.innerHTML = "";
+    var data;
+    try { data = b.make(L.rng(Number(seed.value) | 0)); }
+    catch (e) { out.appendChild(el("div", "notice notice-warn", "Error generant la variant: " + e.message)); return; }
+
+    var q = el("div");
+    if (data.aparat) q.appendChild(el("span", "chip chip-accent", "Apartat " + data.aparat));
+    q.appendChild(el("div", "", data.problema));
+    if (data.enunciat) q.appendChild(mathBox(data.enunciat));
+    out.appendChild(q);
+
+    var inp = document.createElement("input");
+    inp.className = "field"; inp.style.minWidth = "220px";
+    inp.placeholder = "Resposta (6, −5/3, dne, +inf, 21/10, 1,2 …)";
+    var fb = el("div", "small"); fb.style.marginTop = "6px";
+    var row2 = el("div", "row row-wrap");
+    row2.appendChild(inp);
+    row2.appendChild(btn("btn btn-sm btn-primary", "Comprovar", function () {
+      var ok = L1.check(data.respostes, inp.value);
+      if (ok) { prog[b.n] = true; saveProg(); updateProgress(); fb.style.color = "var(--ok)"; fb.textContent = "✓ Correcte!"; }
+      else { fb.style.color = "var(--err)"; fb.textContent = "✕ No és. Pista: " + (data.hint || "llegeix la solució"); }
+    }));
+    row2.appendChild(btn("btn btn-sm btn-ghost", "Pista", function () {
+      fb.style.color = "var(--warn)"; fb.textContent = "💡 " + (data.hint || "");
+    }));
+    row2.appendChild(btn("btn btn-sm btn-ghost", "Solució pas a pas", function () {
+      var rev = el("div", "explain");
+      rev.appendChild(el("b", "", "Solució: "));
+      rev.appendChild(el("span", "", (data.revisio || []).join("  ")));
+      if (data.extra) rev.appendChild(el("div", "small muted", data.extra));
+      out.appendChild(rev);
+    }));
+    row2.appendChild(btn("btn btn-sm btn-ghost", "Resposta", function () {
+      fb.style.color = "var(--accent)";
+      fb.textContent = "Resposta: " + data.respostes.map(function (z) {
+        /* si és un double "net" que prové d'un racional, mostra'l com a fracció */
+        if (typeof z === "number" && isFinite(z)) {
+          for (var den = 1; den <= 40; den++) {
+            var num = z * den;
+            if (Math.abs(num - Math.round(num)) < 1e-9 && Math.round(num) !== 0) {
+              return den === 1 ? String(Math.round(num))
+                : String(Math.round(num)) + "/" + String(den);
+            }
+          }
+          return String(z);
+        }
+        return String(z);
+      }).join(",  ");
+    }));
+    out.appendChild(row2);
+    out.appendChild(fb);
+
+    /* si l'exercici és de trossos, verifiquem la continuïtat de debò */
+    if (data.trossosReals && typeof data.at === "number") {
+      var cont = L1.continuidad(data.trossosReals, data.at);
+      var nb = el("div", "notice notice-accent"); nb.style.marginTop = "10px";
+      nb.appendChild(el("span", {}, "Verificació automàtica: " + cont.tipo));
+      out.appendChild(nb);
+    }
+    /* si l'exercici proposa un cas concret extra (com l'ex. 10), el mostrem */
+    if (data.exSample) {
+      var sb2 = el("div", "notice notice-accent");
+      sb2.style.marginTop = "10px";
+      sb2.appendChild(el("b", {}, "Cas concret: "));
+      sb2.appendChild(el("span", {}, data.exSample.problema));
+      out.appendChild(sb2);
+    }
+
+    /* si hi ha generador del motor equivalent, enFem una variant */
+    var genMap = GEN_EQUIV[b.n];
+    if (genMap && L && L.generatorList && L.generatorList().indexOf(genMap) >= 0) {
+      var gb = btn("btn btn-sm btn-ghost", "Variant del motor oficial (" + genMap + ")", function () {
+        try {
+          var q2 = L.generate({ seed: Math.floor(Math.random() * 100000), generatorIds: [genMap] });
+          var box2 = el("div", "explain");
+          box2.appendChild(el("b", "", "Variant del motor (" + q2.generatorId + "): "));
+          box2.appendChild(A.toMathML(q2.statement.expr));
+          box2.appendChild(el("span", "", "  → " + L.targetLabel(q2.statement.target) +
+            " = " + L.answerToString(q2.answer) + ".  " + L1.ev(q2.statement.expr, 0) + " "));
+          box2.appendChild(el("div", "small muted", q2.quiz ? q2.quiz.question : ""));
+          out.appendChild(box2);
+        } catch (err) { out.appendChild(el("div", "notice notice-warn", "El motor no ha pogut generar: " + err.message)); }
+      });
+      out.appendChild(gb);
+    }
+  }
+  renderVariant();
+}
+
+/* generadors del motor equivalents per exercici (si n'hi ha) */
+var GEN_EQUIV = {
+  4: "lateral-signo", 5: "trozos-continua", 6: "trozos-parametro", 7: "trozos-parametro",
+  9: "cero-cero-notables", 10: "lateral-signo"
+};
+
+/* ---------------------------------------------------------------- */
+/* 10. Arranque                                                       */
+/* ---------------------------------------------------------------- */
+document.getElementById("l1home").addEventListener("click", showHome);
+if (window.Lim) {
+  L = window.Lim; Q = L.Q; Poly = L.Poly; A = L.ast;
+  showHome();
+} else {
+  view.appendChild(el("div", "notice notice-warn",
+    "No s'ha pogut carregar src/engine.js. Obre aquest fitxer des de la carpeta del projecte."));
+}
+
+})();
+</script>
+</body>
+</html>

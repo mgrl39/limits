@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<link rel="stylesheet" href="src/styles.css"></head><body>
+<div id="app"></div>
+<script src="src/engine.js"></script>
+<script src="src/ui-core.js"></script>
+<script src="src/pagina-teoria.js"></script>
+<script>
+UI.montar("teoria","Teoría", construirTeoria);
+(function(){
+  var app=document.getElementById("app");
+  var cs=getComputedStyle(app);
+  var out=["className="+app.className,
+    "bodyClass="+document.body.className,
+    "padding="+cs.padding,"maxWidth="+cs.maxWidth,
+    "theory grid="+getComputedStyle(document.querySelector(".theory")).gridTemplateColumns,
+    "sec w="+document.querySelector(".theory-sec").getBoundingClientRect().width,
+    "sec x="+document.querySelector(".theory-sec").getBoundingClientRect().x,
+    "toc x="+document.querySelector(".toc").getBoundingClientRect().x,
+    "toc w="+document.querySelector(".toc").getBoundingClientRect().width,
+    "body w="+document.body.getBoundingClientRect().width,
+    "innerWidth="+window.innerWidth];
+  document.title=out.join(" | ");
+  var p=document.createElement("pre");p.style.cssText="position:fixed;top:0;left:0;z-index:999;background:#000;color:#0f0;font-size:12px;padding:8px;max-width:100%";
+  p.textContent=out.join("\n");document.body.appendChild(p);
+})();
+</script></body></html>

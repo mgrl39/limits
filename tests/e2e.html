@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>E2E — verificaciones automáticas</title>
+<style>
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0b0e14;color:#c8d0e0;padding:1.5rem;font-size:13px}
+  h1{font-size:16px;margin:0 0 1rem}
+  .ok{color:#4ade80}.err{color:#f87171}.info{color:#60a5fa}
+  #out{white-space:pre-wrap;line-height:1.6}
+  .line{padding:1px 0}
+</style>
+</head>
+<body>
+<h1>Verificación end-to-end</h1>
+<div id="out"></div>
+
+<script>
+/**
+ * Arranca contra index.html en modo local (sin servidor) mediante iframes.
+ * Comprueba el motor, la respuesta del alumno, el DOM de las opciones y la
+ * política de «examen» estricto.
+ */
+const out = document.getElementById("out");
+let pass = 0, fail = 0;
+
+function log(cls, msg) {
+  const d = document.createElement("div");
+  d.className = "line " + cls;
+  d.textContent = msg;
+  out.appendChild(d);
+}
+const ok  = (m) => { pass++; log("ok",  "  ✔ " + m); };
+const err = (m) => { fail++; log("err", "  ✖ " + m); };
+const info= (m) => log("info", "· " + m);
+const head= (m) => log("info", "\n── " + m + " " + "─".repeat(Math.max(0, 56 - m.length)));
+
+function assert(cond, msg) { cond ? ok(msg) : err(msg); return !!cond; }
+const group = (name, fn) => {
+  head(name);
+  try { fn(); } catch (e) { err("EXCEPCIÓN: " + (e && e.message || e)); }
+};
+
+function load() {
+  return new Promise((resolve) => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-99999px;width:1200px;height:900px;border:0";
+    f.src = "../index.html";
+    f.onload = () => resolve(f);
+    document.body.appendChild(f);
+  });
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+(async function run() {
+  const frame = await load();
+  const w = frame.contentWindow;
+  const $ = (sel) => w.document.querySelector(sel);
+  const $$ = (sel) => [...w.document.querySelectorAll(sel)];
+  const visibleOptions = () => $$(".opt").filter(b => b.offsetParent !== null);
+
+  group("1. Arranque", () => {
+    assert(!!w.Lim, "window.Lim existe");
+    assert(!!w.App, "window.App existe");
+    assert($$(".screen").length > 0, "hay al menos una pantalla montada");
+  });
+
+  group("2. Motor — los 23 generadores × 300 semillas", () => {
+    const ids = w.Lim.generatorList ? w.Lim.generatorList()
+             : Object.keys(w.Lim.GENERATORS);
+    info(`generadores: ${ids.length}`);
+    assert(ids.length >= 20, `hay ${ids.length} generadores (>=20)`);
+
+    let problemas = 0, quizMal = 0, pasosCorto = 0, distractoresMal = 0, excepcion = 0;
+    for (const id of ids) {
+      for (let s = 0; s < 300; s++) {
+        let p;
+        try {
+          p = w.Lim.generate({ seed: s * 7919 + ids.indexOf(id) * 104729, generatorIds: [id] });
+        } catch (e) { excepcion++; if (excepcion < 4) err(`${id} semilla ${s}: ${e.message}`); continue; }
+        if (!p) { excepcion++; continue; }
+        problemas++;
+
+        // el alumno que escribe la respuesta canónica DEBE acertar
+        let canon;
+        try { canon = w.Lim.answerToString(p.answer); } catch (e) { canon = null; }
+        if (canon == null) { excepcion++; continue; }
+        const res = w.Lim.checkAnswer(p, canon);
+        if (!res || !res.correct) {
+          quizMal++;
+          if (quizMal < 6) err(`${id}: la respuesta canónica "${canon}" no se acepta (${res && res.reason})`);
+        }
+
+        if (!p.quiz || !Array.isArray(p.quiz.options) || p.quiz.options.length !== 4
+            || p.quiz.correct == null || p.quiz.correct < 0 || p.quiz.correct > 3) {
+          quizMal++;
+          if (quizMal < 6) err(`${id}: interrogatorio mal formado`);
+        }
+        if (!p.steps || p.steps.length < 2) {
+          pasosCorto++;
+          if (pasosCorto < 6) err(`${id}: solo ${p.steps && p.steps.length} pasos de solución`);
+        }
+        if (!p.distractors || p.distractors.length !== 3) {
+          distractoresMal++;
+          if (distractoresMal < 6) err(`${id}: ${p.distractors && p.distractors.length} distractores (deben ser 3)`);
+        }
+      }
+    }
+    info(`${problemas} problemas generados`);
+    assert(excepcion === 0, `ninguna excepción al generar (${excepcion})`);
+    assert(quizMal === 0, `respuesta canónica aceptada e interrogatorio válido (${quizMal} fallos)`);
+    assert(pasosCorto === 0, `todos con >= 2 pasos de solución (${pasosCorto} fallos)`);
+    assert(distractoresMal === 0, `todos con 3 distractores (${distractoresMal} fallos)`);
+  });
+
+  group("3. Determinismo (el cuaderno guarda solo la semilla)", () => {
+    const a = w.Lim.generate({ seed: 424242 });
+    const b = w.Lim.generate({ seed: 424242 });
+    assert(w.Lim.answerToString(a.answer) === w.Lim.answerToString(b.answer),
+      "misma semilla → misma respuesta");
+    const c = w.Lim.generate({ seed: 424243 });
+    assert(w.Lim.answerToString(c.answer) !== w.Lim.answerToString(a.answer),
+      "semilla distinta → problema distinto");
+  });
+
+  group("4. Parser de respuestas", () => {
+    const mk = (answer) => ({ answer });
+    const casos = [
+      [{ kind: "rational", value: w.Lim.Q(3, 4) }, ["3/4", " 3 / 4 ", "0.75"], true],
+      [{ kind: "rational", value: w.Lim.Q(-2) },    ["-2", "−2"], true],
+      [{ kind: "infinite", sign: 1 },   ["+inf", "infinity", "+infinity", "+∞"], true],
+      [{ kind: "infinite", sign: -1 },  ["-inf", "-infinity", "-∞"], true],
+      [{ kind: "dne" },                 ["no existe", "noexiste", "dne", "no"], true],
+    ];
+    for (const [answer, formas, debe] of casos) {
+      const p = mk(answer);
+      for (const f of formas) {
+        const r = w.Lim.checkAnswer(p, f);
+        if (r.correct !== debe) err(`"${f}" → ${r.correct} (esperaba ${debe})`);
+      }
+      ok(`${formas.length} formas aceptadas para ${w.Lim.answerToString(answer)}`);
+    }
+    // rechazables
+    const bad = [
+      [{ kind: "rational", value: w.Lim.Q(3, 4) }, "3/5", "abc", "", "1"],
+      [{ kind: "infinite", sign: 1 },  "no existe", "0", "-inf"],
+      [{ kind: "dne" }, "+inf", "5", "sí"],
+    ];
+    for (const [answer, ...falsos] of bad) {
+      for (const f of falsos) {
+        const r = w.Lim.checkAnswer(mk(answer), f);
+        if (r.correct) err(`"${f}" NO debería aceptarse para ${w.Lim.answerToString(answer)}`);
+      }
+    }
+    ok("las respuestas falsas se rechazan");
+  });
+
+  group("5. Pantalla de juego — enunciado y opciones", async () => {
+    w.App.state && w.App.state.setScreen && w.App.state.setScreen("libre");
+    await sleep(250);
+    const math = $$("math");
+    assert(math.length > 0, `el límite se pinta en MathML (${math.length} nodos)`);
+    const txt = w.document.body.innerText || "";
+    assert(/límite|lím/i.test(txt), "aparece el texto del enunciado");
+  });
+
+  group("6. Política «botón» — las opciones no existen hasta el clic", async () => {
+    w.App.setSettings && w.App.setSettings({ modo: "opciones", politica: "boton" });
+    await sleep(350);
+    const antes = visibleOptions().length;
+    assert(antes === 0, `antes de pulsar no hay opciones en el DOM (hay ${antes})`);
+    const btn = $$("button").find(b => /ver opciones/i.test(b.textContent));
+    assert(!!btn, "existe el botón «Ver opciones»");
+    if (btn) {
+      btn.click();
+      await sleep(250);
+      const despues = visibleOptions().length;
+      assert(despues === 4, `tras el clic hay 4 opciones (hay ${despues})`);
+    }
+  });
+
+  group("7. Política «examen» estricto — bloquea tras fallar", async () => {
+    w.App.setSettings && w.App.setSettings({ modo: "opciones", politica: "examen" });
+    w.App.generateNext && w.App.generateNext();
+    await sleep(350);
+
+    const btnAntes = $$("button").find(b => /ver opciones/i.test(b.textContent));
+    assert(!!btnAntes, "existe el botón «Ver opciones»");
+    assert(btnAntes && btnAntes.disabled === true,
+      "el botón arranca DESHABILITADO (no se puede ver sin intentar)");
+
+    const campo = $("input[type=text], .field");
+    assert(!!campo, "hay campo de texto para responder antes de mirar");
+    if (campo) {
+      campo.value = "123456";           // deliberadamente incorrecto
+      campo.dispatchEvent(new w.Event("input", { bubbles: true }));
+      await sleep(80);
+      const btnComprobar = $$("button").find(b => /comprobar/i.test(b.textContent));
+      assert(!!btnComprobar && btnComprobar.disabled === false, "«Comprobar» se habilita al escribir");
+      if (btnComprobar) {
+        btnComprobar.click();
+        await sleep(350);
+        const btnDespues = $$("button").find(b => /ver opciones/i.test(b.textContent));
+        assert(btnDespues && btnDespues.disabled === true,
+          "tras FALLAR, las opciones quedan bloqueadas para siempre");
+        const opts = visibleOptions().length;
+        assert(opts === 0, `sigue sin haber opciones visibles (hay ${opts})`);
+      }
+    }
+  });
+
+  group("8. Política «visible» — las opciones se pintan solas", async () => {
+    w.App.setSettings && w.App.setSettings({ modo: "opciones", politica: "visible" });
+    w.App.generateNext && w.App.generateNext();
+    await sleep(350);
+    assert(visibleOptions().length === 4,
+      `4 opciones desde el principio (hay ${visibleOptions().length})`);
+  });
+
+  group("9. Interrogatorio de método obligatorio", async () => {
+    const st = w.App.state;
+    const app = st && st.state ? st.state : w.App.state;
+    info("el flujo se comprueba manualmente en el navegador; aquí solo la API");
+    assert(typeof w.Lim.checkQuiz === "function", "checkQuiz existe");
+    if (w.App.generateNext) {
+      w.App.generateNext();
+      await sleep(300);
+      const p = app && app.current;
+      if (p) {
+        assert(!!p.quiz, "el problema actual trae interrogatorio");
+        assert(p.quiz.options.length === 4, "con 4 opciones");
+        assert(w.Lim.checkQuiz(p, p.quiz.correct) === true, "el índice correcto se acepta");
+        assert(w.Lim.checkQuiz(p, (p.quiz.correct + 1) % 4) === false, "un índice incorrecto se rechaza");
+      }
+    }
+  });
+
+  group("10. Cuaderno de errores y persistencia", async () => {
+    const KEY = "limites:v1";
+    w.localStorage.removeItem(KEY);
+    w.App.start && w.App.start(w.document.getElementById("app"));
+    await sleep(400);
+    const guardado = w.localStorage.getItem(KEY);
+    assert(!!guardado, "se escribe en localStorage bajo «limites:v1»");
+    if (guardado) {
+      let parsed = null;
+      try { parsed = JSON.parse(guardado); } catch (e) {}
+      assert(!!parsed, "el JSON es válido");
+      if (parsed) {
+        for (const k of ["settings", "stats", "campaign", "notebook"]) {
+          assert(k in parsed, `la clave «${k}» existe`);
+        }
+      }
+    }
+    // corrupto -> no rompe
+    w.localStorage.setItem(KEY, "{ esto no es json");
+    let sobrevivio = false;
+    try { w.App.start(w.document.getElementById("app")); sobrevivio = true; } catch (e) {}
+    assert(sobrevivio, "sobrevive a un localStorage corrupto sin romperse");
+    w.localStorage.removeItem(KEY);
+  });
+
+  group("11. Renderizado de la solución", async () => {
+    const p = w.Lim.generate({ seed: 999 });
+    let html = "";
+    try { html = w.Lim.solutionHtml(p); } catch (e) { err("solutionHtml lanza: " + e.message); }
+    assert(typeof html === "string" && html.length > 20, "solutionHtml devuelve contenido");
+    assert(/class="[^"]*step/.test(html), "marca los pasos");
+    if (w.App.state) { /* el panel se pinta desde generateNext en el navegador */ }
+  });
+
+  group("12. El fichero final es autocontenido", () => {
+    const scripts = $$("script[src]").length;
+    const links = $$("link[rel=stylesheet]").length;
+    assert(scripts === 0, `no hay <script src> externos (hay ${scripts})`);
+    assert(links === 0, `no hay hojas de estilo externas (hay ${links})`);
+    const html = w.document.documentElement.outerHTML;
+    assert(!/https?:\/\/(?!www\.w3\.org|creativecommons)/i.test(html.replace(/xmlns[^>]*>/g, "")),
+      "ninguna URL de red en el documento");
+  });
+
+  head("Resumen");
+  const t = err => `  ${pass} correctas, ${fail} fallidas\n`;
+  const d = document.createElement("div");
+  d.className = fail === 0 ? "ok" : "err";
+  d.style.cssText = "margin-top:1rem;font-size:15px;font-weight:bold";
+  d.textContent = `  ${pass} correctas · ${fail} fallidas`;
+  out.appendChild(d);
+  window.__RESULT__ = { pass, fail };
+})();
+</script>
+</body>
+</html>
