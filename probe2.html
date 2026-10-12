@@ -1,0 +1,22 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="src/styles.css"></head><body>
+<div id="r"></div>
+<script>
+var tests=[
+ ["calc-env","calc(40px + env(safe-area-inset-bottom, 0px))"],
+ ["calc-env2","calc(40px + env(safe-area-inset-bottom))"],
+ ["var-pad","0 var(--pad) calc(40px + env(safe-area-inset-bottom, 0px))"],
+ ["var-pad2","0 var(--pad) 40px"],
+ ["support-env","CSS.supports('padding-bottom','env(safe-area-inset-bottom, 0px)')"]
+];
+var o=[];
+tests.forEach(function(t,i){
+  var d=document.createElement("div");
+  if(t[0]!=="support-env"){d.style.cssText="position:absolute;left:-9999px;--pad:16px;padding:"+t[1];}
+  document.body.appendChild(d);
+  var v = t[0]==="support-env"? t[1] : (t[0]==="var-pad2"? getComputedStyle(d).padding : getComputedStyle(d).padding);
+  o.push(t[0]+" => ["+v+"] value='"+(t[0]==="support-env"?v:d.style.padding)+"'");
+});
+
+var p=document.createElement("pre");p.style.cssText="position:fixed;top:0;left:0;background:#000;color:#0f0;z-index:9;font-size:12px;padding:10px";
+p.textContent=o.join("\n");document.body.appendChild(p);
+</script></body></html>
